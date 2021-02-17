@@ -83,7 +83,12 @@ public class PluginNearlineStorage implements NearlineStorage
             } else {
                 Document entry = new Document("pnfsid", pnfsid)
                         .append("store", flushRequest.getFileAttributes().getStorageInfo().getKey("store"))
-                        .append("group", flushRequest.getFileAttributes().getStorageInfo().getKey("group"));
+                        .append("group", flushRequest.getFileAttributes().getStorageInfo().getKey("group"))
+                        .append("path", flushRequest.getReplicaUri().getPath().toString())
+                        .append("parent", flushRequest.getReplicaUri().getPath().toString()) // Need to figure out the correct paths
+                        .append("size", flushRequest.getFileAttributes().getSize())
+                        // Ctime, but that wasn't possible
+                        .append("state", "new");
                 _log.debug("Inserting to database: " + entry.toJson());
                 files.insertOne(entry);
                 flushRequest.failed(72, "Not yet ready (empty)");
