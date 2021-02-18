@@ -47,7 +47,7 @@ public class SmallFilesDriver implements NearlineStorage
         for (FlushRequest flushRequest : requests) {
             flushRequest.activate();
             pnfsid = flushRequest.getFileAttributes().getPnfsId().toString();
-            _log.debug("PNFSID: " + flushRequest.getFileAttributes().getPnfsId());
+            _log.debug("PNFSID: {}", flushRequest.getFileAttributes().getPnfsId());
 
             if (flushRequest.getFileAttributes().getSize() == 0) {
                 _log.debug("Filesize is 0");
@@ -58,19 +58,19 @@ public class SmallFilesDriver implements NearlineStorage
                             "&group=" + group + "&bfid=" + pnfsid + ":*")));
                     continue;
                 } catch (URISyntaxException e) {
-                    e.printStackTrace();
+                    throw new RuntimeException("Could not create URI to complete FlushRequest with filesize 0");
                 }
             }
 
             results = files.find(eq("pnfsid", flushRequest.getFileAttributes().getPnfsId().toString()));
             if(results.iterator().hasNext()) {
                 Document result = results.iterator().next();
-                _log.debug("Result: " + result.toJson());
+                _log.debug("Result: {}", result.toJson());
                 if (result.containsKey("archiveUrl")) {
                     try {
                         String archiveUrl = (String) result.get("archiveUrl");
                         URI fileUri = new URI(archiveUrl.replace("dcache://dcache", type + "://" + name));
-                        _log.debug("archiveUrl exists, fileUri: " + fileUri.toString());
+                        _log.debug("archiveUrl exists, fileUri: {}", fileUri.toString());
                         files.deleteOne(new Document("pnfsid", pnfsid));
                         flushRequest.completed(Collections.singleton(fileUri));
                     } catch (URISyntaxException e) {
@@ -84,7 +84,7 @@ public class SmallFilesDriver implements NearlineStorage
                 Document entry = new Document("pnfsid", pnfsid)
                         .append("store", flushRequest.getFileAttributes().getStorageInfo().getKey("store"))
                         .append("group", flushRequest.getFileAttributes().getStorageInfo().getKey("group"));
-                _log.debug("Inserting to database: " + entry.toJson());
+                _log.debug("Inserting to database: {}", entry.toJson());
                 files.insertOne(entry);
                 flushRequest.failed(72, "Not yet ready (empty)");
             }
@@ -147,10 +147,9 @@ public class SmallFilesDriver implements NearlineStorage
         if (mongoUri.equals("") || database.equals("")) {
             String propertiesPath = properties.getOrDefault("conf_file", "");
             if (propertiesPath.equals("")) {
-                throw new RuntimeException("No or not enough details to MongoDB or configuration file given.");
+                throw new IllegalArgumentException("No or not enough details to MongoDB or configuration file given.");
             } else {
-                try{
-                    InputStream inputStream = new FileInputStream(propertiesPath);
+                try(InputStream inputStream = new FileInputStream(propertiesPath)){
                     Properties prop = new Properties();
                     try{
                         prop.load(inputStream);
@@ -162,10 +161,12 @@ public class SmallFilesDriver implements NearlineStorage
 
                 } catch (FileNotFoundException e) {
                     throw new RuntimeException("Configuration file not found");
+                } catch (IOException e) {
+                    throw new RuntimeException("Could not open and read configuration file");
                 }
             }
         }
-        _log.debug("mongoUri: " + mongoUri + "; database: " + database);
+        _log.debug("mongoUri: {}; database: {}" + mongoUri, database);
 
         try{
             mongoClient = MongoClients.create(mongoUri);
