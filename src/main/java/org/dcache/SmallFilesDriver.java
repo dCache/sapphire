@@ -18,16 +18,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
-public class PluginNearlineStorage implements NearlineStorage
+public class SmallFilesDriver implements NearlineStorage
 {
-    private static final Logger _log = LoggerFactory.getLogger(PluginNearlineStorage.class);
+    private static final Logger _log = LoggerFactory.getLogger(SmallFilesDriver.class);
 
     protected final String type;
     protected final String name;
     private MongoClient mongoClient;
     MongoCollection<Document> files;
 
-    public PluginNearlineStorage(String type, String name)
+    public SmallFilesDriver(String type, String name)
     {
         this.type = type;
         this.name = name;

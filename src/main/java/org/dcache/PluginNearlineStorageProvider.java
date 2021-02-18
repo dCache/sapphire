@@ -1,7 +1,5 @@
 package org.dcache;
 
-import java.util.Properties;
-
 import org.dcache.pool.nearline.spi.NearlineStorage;
 import org.dcache.pool.nearline.spi.NearlineStorageProvider;
 
@@ -22,6 +20,6 @@ public class PluginNearlineStorageProvider implements NearlineStorageProvider
     @Override
     public NearlineStorage createNearlineStorage(String type, String name)
     {
-        return new PluginNearlineStorage(type, name);
+        return new SmallFilesDriver(type, name);
     }
 }
