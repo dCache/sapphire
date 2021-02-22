@@ -166,7 +166,7 @@ public class SmallFilesDriver implements NearlineStorage
                 }
             }
         }
-        _log.debug("mongoUri: {}; database: {}" + mongoUri, database);
+        _log.debug("mongoUri: {}; database: {}", mongoUri, database);
 
         try{
             mongoClient = MongoClients.create(mongoUri);
