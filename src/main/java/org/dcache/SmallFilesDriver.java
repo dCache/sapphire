@@ -70,7 +70,7 @@ public class SmallFilesDriver implements NearlineStorage
                     try {
                         String archiveUrl = (String) result.get("archiveUrl");
                         URI fileUri = new URI(archiveUrl.replace("dcache://dcache", type + "://" + name));
-                        _log.debug("archiveUrl exists, fileUri: {}", fileUri.toString());
+                        _log.debug("archiveUrl exists, fileUri: {}", fileUri);
                         files.deleteOne(new Document("pnfsid", pnfsid));
                         flushRequest.completed(Collections.singleton(fileUri));
                     } catch (URISyntaxException e) {
