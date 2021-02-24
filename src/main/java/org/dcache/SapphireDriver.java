@@ -3,6 +3,7 @@ package org.dcache;
 import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.Path;
 import java.util.*;
 
 import static com.mongodb.client.model.Filters.*;
@@ -81,16 +82,23 @@ public class SapphireDriver implements NearlineStorage
                     flushRequest.failed(72, "Not yet ready");
                 }
             } else {
-                Document entry = new Document("pnfsid", pnfsid)
-                        .append("store", flushRequest.getFileAttributes().getStorageInfo().getKey("store"))
-                        .append("group", flushRequest.getFileAttributes().getStorageInfo().getKey("group"))
-                        .append("path", flushRequest.getReplicaUri().getPath().toString())
-                        .append("parent", flushRequest.getReplicaUri().getPath().toString()) // Need to figure out the correct paths
-                        .append("size", flushRequest.getFileAttributes().getSize())
-                        // Ctime, but that wasn't possible
-                        .append("state", "new");
-                _log.debug("Inserting to database: " + entry.toJson());
-                files.insertOne(entry);
+                try{
+                    Path path = Path.of(flushRequest.getFileAttributes().getStorageInfo().getKey("path"));
+                    Document entry = new Document("pnfsid", pnfsid)
+                            .append("store", flushRequest.getFileAttributes().getStorageInfo().getKey("store"))
+                            .append("group", flushRequest.getFileAttributes().getStorageInfo().getKey("group"))
+                            .append("path", path.toString())
+                            .append("parent", path.getParent().toString())
+                            .append("size", Integer.parseInt(Long.toString(flushRequest.getFileAttributes().getSize())))
+                            .append("ctime", Double.parseDouble(Long.toString(flushRequest.getFileAttributes().getCreationTime())) / 1000)
+                            .append("state", "new");
+                    _log.debug("Inserting to database: {}", entry.toJson());
+                    files.insertOne(entry);
+                } catch (IllegalStateException e) {
+                  _log.error("Some fields could not be retrieved: " + e);
+                  flushRequest.failed(e);
+                  continue;
+                }
                 flushRequest.failed(72, "Not yet ready (empty)");
             }
         }
