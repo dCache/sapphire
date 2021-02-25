@@ -25,5 +25,5 @@ The plugin should be listed.
 
 To activate the plugin, create an HSM instance using:
 
-    hsm create osm name hsm_internal [-key=value]...
+    hsm create osm name Sapphire [-key=value]...
 
