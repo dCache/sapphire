@@ -1,12 +1,15 @@
-Sapphire Plugin for dCache
+Sapphire Plugin - Java driver for dCache
 ==================================
 
-This is "**s**mallfile to **a**rchive **p**acking **p**lugin for
-**h**igh **i**ngest **re**search" plugin for dCache. It consists
-of two parts, the driver for dCache and the (un-)packing part that
-runs independent of dCache on another machine.
+This is the driver part of Sapphire.
 
-Using the driver with dCache
+To compile the plugin, run:
+
+    mvn package
+
+This produces a tarball in the `target` directory containing the plugin.
+
+Using the plugin with dCache
 ----------------------------
 
 To use this plugin with dCache, place the directory containing this
@@ -23,3 +26,4 @@ The plugin should be listed as *Sapphire*.
 To activate the plugin, create an HSM instance using:
 
     hsm create osm name Sapphire [-key=value]...
+
