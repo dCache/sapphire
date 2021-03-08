@@ -57,7 +57,7 @@ public class SapphireDriver implements NearlineStorage
             _log.debug("Added file to flushRequestQueue");
             flushRequestQueue.add(flushRequest);
         }
-        _log.debug("Length of flushRequestQueue: " + flushRequestQueue.size());
+        _log.debug("Length of flushRequestQueue: {}", flushRequestQueue.size());
     }
 
     /**
