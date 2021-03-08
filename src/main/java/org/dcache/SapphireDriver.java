@@ -161,16 +161,15 @@ public class SapphireDriver implements NearlineStorage
         executorService.shutdown();
     }
 
-
     private void processFlush() {
         _log.debug("processFlush() called");
         Queue<FlushRequest> notYetReady = new ArrayDeque<>();
-        FlushRequest request = flushRequestQueue.poll(); // returns null if empty
-        FindIterable<Document> results;
-        String pnfsid;
-        while (request != null) {
-            pnfsid = request.getFileAttributes().getPnfsId().toString();
-            _log.debug("PNFSID: {}", request.getFileAttributes().getPnfsId());
+        FlushRequest request;
+
+        while ((request = flushRequestQueue.poll()) != null) {
+
+            String pnfsid = request.getFileAttributes().getPnfsId().toString();
+            _log.debug("PNFSID: {}", pnfsid);
 
             if (request.getFileAttributes().getSize() == 0) {
                 _log.debug("Filesize is 0");
@@ -179,12 +178,13 @@ public class SapphireDriver implements NearlineStorage
                 try {
                     request.completed(Collections.singleton(new URI("dcache://dcache/store=" + store +
                             "&group=" + group + "&bfid=" + pnfsid + ":*")));
+                    continue;
                 } catch (URISyntaxException e) {
                     throw new RuntimeException("Could not create URI to complete FlushRequest with filesize 0");
                 }
             }
 
-            results = files.find(eq("pnfsid", pnfsid)).limit(1);
+            FindIterable<Document> results = files.find(eq("pnfsid", pnfsid)).limit(1);
             Document result = results.first();
             if(result != null) {
                 _log.debug("Result: {}", result.toJson());
@@ -210,8 +210,6 @@ public class SapphireDriver implements NearlineStorage
                 files.insertOne(entry);
                 notYetReady.offer(request);
             }
-
-            request = flushRequestQueue.poll();
         }
         _log.debug("NotYetReady size: " + notYetReady.size() + " will be added to flushRequestQueue now");
         flushRequestQueue.addAll(notYetReady);
