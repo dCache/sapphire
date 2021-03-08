@@ -4,6 +4,10 @@ import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.*;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static com.mongodb.client.model.Filters.*;
 import com.mongodb.MongoSocketOpenException;
@@ -26,11 +30,16 @@ public class SapphireDriver implements NearlineStorage
     protected final String name;
     private MongoClient mongoClient;
     MongoCollection<Document> files;
+    private final Queue<FlushRequest> flushRequestQueue;
+    private final ScheduledExecutorService executorService;
 
     public SapphireDriver(String type, String name)
     {
         this.type = type;
         this.name = name;
+        flushRequestQueue = new ConcurrentLinkedDeque<>();
+        executorService = new ScheduledThreadPoolExecutor(1);
+        executorService.scheduleAtFixedRate(this::processFlush, 60, 60, TimeUnit.SECONDS);
     }
 
     /**
@@ -41,54 +50,14 @@ public class SapphireDriver implements NearlineStorage
     @Override
     public void flush(Iterable<FlushRequest> requests)
     {
-        FindIterable<Document> results;
-        String pnfsid;
         _log.debug("Triggered flush()");
-        for (FlushRequest flushRequest : requests) {
+
+        for(FlushRequest flushRequest : requests) {
             flushRequest.activate();
-            pnfsid = flushRequest.getFileAttributes().getPnfsId().toString();
-            _log.debug("PNFSID: {}", flushRequest.getFileAttributes().getPnfsId());
-
-            if (flushRequest.getFileAttributes().getSize() == 0) {
-                _log.debug("Filesize is 0");
-                String store = flushRequest.getFileAttributes().getStorageInfo().getKey("store");
-                String group = flushRequest.getFileAttributes().getStorageInfo().getKey("group");
-                try {
-                    flushRequest.completed(Collections.singleton(new URI("dcache://dcache/store=" + store +
-                            "&group=" + group + "&bfid=" + pnfsid + ":*")));
-                    continue;
-                } catch (URISyntaxException e) {
-                    throw new RuntimeException("Could not create URI to complete FlushRequest with filesize 0");
-                }
-            }
-
-            results = files.find(eq("pnfsid", flushRequest.getFileAttributes().getPnfsId().toString()));
-            if(results.iterator().hasNext()) {
-                Document result = results.iterator().next();
-                _log.debug("Result: {}", result.toJson());
-                if (result.containsKey("archiveUrl")) {
-                    try {
-                        String archiveUrl = (String) result.get("archiveUrl");
-                        URI fileUri = new URI(archiveUrl.replace("dcache://dcache", type + "://" + name));
-                        _log.debug("archiveUrl exists, fileUri: {}", fileUri);
-                        files.deleteOne(new Document("pnfsid", pnfsid));
-                        flushRequest.completed(Collections.singleton(fileUri));
-                    } catch (URISyntaxException e) {
-                        _log.error("Error completing flushRequest: " + e);
-                        flushRequest.failed(e);
-                    }
-                } else {
-                    flushRequest.failed(72, "Not yet ready");
-                }
-            } else {
-                Document entry = new Document("pnfsid", pnfsid)
-                        .append("store", flushRequest.getFileAttributes().getStorageInfo().getKey("store"))
-                        .append("group", flushRequest.getFileAttributes().getStorageInfo().getKey("group"));
-                _log.debug("Inserting to database: {}", entry.toJson());
-                files.insertOne(entry);
-                flushRequest.failed(72, "Not yet ready (empty)");
-            }
+            _log.debug("Added file to flushRequestQueue");
+            flushRequestQueue.add(flushRequest);
         }
+        _log.debug("Length of flushRequestQueue: " + flushRequestQueue.size());
     }
 
     /**
@@ -189,6 +158,62 @@ public class SapphireDriver implements NearlineStorage
     public void shutdown()
     {
         mongoClient.close();
+        executorService.shutdown();
     }
 
+
+    private void processFlush() {
+        _log.debug("processFlush() called");
+        Queue<FlushRequest> notYetReady = new ArrayDeque<>();
+        FlushRequest request = flushRequestQueue.poll(); // returns null if empty
+        FindIterable<Document> results;
+        String pnfsid;
+        while (request != null) {
+            pnfsid = request.getFileAttributes().getPnfsId().toString();
+            _log.debug("PNFSID: {}", request.getFileAttributes().getPnfsId());
+
+            if (request.getFileAttributes().getSize() == 0) {
+                _log.debug("Filesize is 0");
+                String store = request.getFileAttributes().getStorageInfo().getKey("store");
+                String group = request.getFileAttributes().getStorageInfo().getKey("group");
+                try {
+                    request.completed(Collections.singleton(new URI("dcache://dcache/store=" + store +
+                            "&group=" + group + "&bfid=" + pnfsid + ":*")));
+                } catch (URISyntaxException e) {
+                    throw new RuntimeException("Could not create URI to complete FlushRequest with filesize 0");
+                }
+            }
+
+            results = files.find(eq("pnfsid", pnfsid)).limit(1);
+            Document result = results.first();
+            if(result != null) {
+                _log.debug("Result: {}", result.toJson());
+                if (result.containsKey("archiveUrl")) {
+                    try {
+                        String archiveUrl = (String) result.get("archiveUrl");
+                        URI fileUri = new URI(archiveUrl.replace("dcache://dcache", type + "://" + name));
+                        _log.debug("archiveUrl exists, fileUri: {}", fileUri);
+                        files.deleteOne(new Document("pnfsid", pnfsid));
+                        request.completed(Collections.singleton(fileUri));
+                    } catch (URISyntaxException e) {
+                        _log.error("Error completing flushRequest: " + e);
+                        request.failed(e);
+                    }
+                } else {
+                    notYetReady.offer(request);
+                }
+            } else {
+                Document entry = new Document("pnfsid", pnfsid)
+                        .append("store", request.getFileAttributes().getStorageInfo().getKey("store"))
+                        .append("group", request.getFileAttributes().getStorageInfo().getKey("group"));
+                _log.debug("Inserting to database: {}", entry.toJson());
+                files.insertOne(entry);
+                notYetReady.offer(request);
+            }
+
+            request = flushRequestQueue.poll();
+        }
+        _log.debug("NotYetReady size: " + notYetReady.size() + " will be added to flushRequestQueue now");
+        flushRequestQueue.addAll(notYetReady);
+    }
 }
