@@ -211,7 +211,7 @@ public class SapphireDriver implements NearlineStorage
                 notYetReady.offer(request);
             }
         }
-        _log.debug("NotYetReady size: " + notYetReady.size() + " will be added to flushRequestQueue now");
+        _log.debug("NotYetReady size: {} will be added to flushRequestQueue now", notYetReady.size());
         flushRequestQueue.addAll(notYetReady);
     }
 }
