@@ -4,10 +4,8 @@ import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.*;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.function.Predicate;
 
 import static com.mongodb.client.model.Filters.*;
 import com.mongodb.MongoSocketOpenException;
@@ -97,7 +95,16 @@ public class SapphireDriver implements NearlineStorage
     @Override
     public void cancel(UUID uuid)
     {
-        throw new UnsupportedOperationException("Not implemented");
+        _log.debug("Cancel triggered for UUID {}", uuid);
+        Predicate<FlushRequest> byUUID = request -> request.getId().equals(uuid);
+        flushRequestQueue.stream().filter(byUUID)
+                .findAny()
+                .ifPresent(request ->  {
+                    if (flushRequestQueue.removeIf(byUUID)) {
+                        files.deleteOne(new Document("pnfsid", request.getFileAttributes().getPnfsId().toString()));
+                        request.failed(new CancellationException());
+                    }
+                });
     }
 
     /**
