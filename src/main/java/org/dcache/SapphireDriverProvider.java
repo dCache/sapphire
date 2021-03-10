@@ -8,7 +8,7 @@ public class SapphireDriverProvider implements NearlineStorageProvider
     @Override
     public String getName()
     {
-        return "Sapphire";
+        return "sapphire";
     }
 
     @Override
