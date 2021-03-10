@@ -26,6 +26,13 @@
         </license>
     </licenses>
 
+    <scm>
+        <url>https://github.com/dCache/sapphire.git</url>
+        <connection>scm:git:https://github.com/dCache/sapphire.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/dCache/sapphire.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
+
     <repositories>
         <repository>
             <id>dcache.repository</id>
