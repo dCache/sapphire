@@ -8,6 +8,8 @@ import java.util.concurrent.*;
 import java.util.function.Predicate;
 
 import static com.mongodb.client.model.Filters.*;
+
+import com.google.common.base.Throwables;
 import com.mongodb.MongoSocketOpenException;
 import com.mongodb.client.*;
 import org.bson.Document;
@@ -51,9 +53,15 @@ public class SapphireDriver implements NearlineStorage
         _log.debug("Triggered flush()");
 
         for(FlushRequest flushRequest : requests) {
-            flushRequest.activate();
-            _log.debug("Added file to flushRequestQueue");
-            flushRequestQueue.add(flushRequest);
+            try {
+                flushRequest.activate().get();
+                flushRequestQueue.add(flushRequest);
+                _log.debug("Added file to flushRequestQueue");
+            } catch (ExecutionException | InterruptedException e) {
+                Throwable t = Throwables.getRootCause(e);
+                _log.error("Failed to active request ", t.getMessage());
+                flushRequest.failed(e);
+            }
         }
         _log.debug("Length of flushRequestQueue: {}", flushRequestQueue.size());
     }
