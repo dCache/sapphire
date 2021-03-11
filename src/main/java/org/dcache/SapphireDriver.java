@@ -176,7 +176,9 @@ public class SapphireDriver implements NearlineStorage
     @Override
     public void shutdown()
     {
-        mongoClient.close();
+        if (mongoClient != null) {
+            mongoClient.close();
+        }
         executorService.shutdown();
     }
 
