@@ -119,7 +119,7 @@ public class SapphireDriverTest {
 
     private void waitForDriverRun(int sec) {
         try {
-            TimeUnit.SECONDS.sleep(2);
+            TimeUnit.SECONDS.sleep(sec);
         } catch (InterruptedException e) {}
     }
 }
