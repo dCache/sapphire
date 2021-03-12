@@ -23,3 +23,12 @@ The plugin should be listed as *Sapphire*.
 To activate the plugin, create an HSM instance using:
 
     hsm create osm name Sapphire [-key=value]...
+
+The available configuration options:
+
+| Name | Description | required | default |
+| :--- | :--- | ---: | --- |
+database | The mongo database name | yes | -
+mongo_url | The mongodb connection url | yes | -
+period | The period between successive scans of flush queue | no | 1
+period_unit | The the time unit of period, SECONDS, MINUTES ... | no | MINUTES
