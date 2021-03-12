@@ -212,10 +212,10 @@ public class SapphireDriver implements NearlineStorage
                 _log.debug("Result: {}", result.toJson());
                 if (result.containsKey("archiveUrl")) {
                     try {
+                        files.deleteOne(new Document("pnfsid", pnfsid));
                         String archiveUrl = (String) result.get("archiveUrl");
                         URI fileUri = new URI(archiveUrl.replace("dcache://dcache", type + "://" + name));
                         _log.debug("archiveUrl exists, fileUri: {}", fileUri);
-                        files.deleteOne(new Document("pnfsid", pnfsid));
                         request.completed(Collections.singleton(fileUri));
                     } catch (URISyntaxException e) {
                         _log.error("Error completing flushRequest: " + e);
