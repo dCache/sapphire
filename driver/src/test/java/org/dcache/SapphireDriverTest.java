@@ -79,7 +79,7 @@ public class SapphireDriverTest {
     }
 
     @Test
-    public void shouldPopulateDb() throws InterruptedException {
+    public void shouldPopulateDb() {
         sapphireDriver.flush(Set.of(request));
         waitForDriverRun(2);
 
@@ -87,7 +87,7 @@ public class SapphireDriverTest {
     }
 
     @Test
-    public void shouldSuccessWhenUrlProvided() throws InterruptedException {
+    public void shouldSuccessWhenUrlProvided() {
         sapphireDriver.flush(Set.of(request));
 
         waitForDriverRun(2);
@@ -101,7 +101,7 @@ public class SapphireDriverTest {
     }
 
     @Test
-    public void shouldFailOnBadUrl() throws InterruptedException {
+    public void shouldFailOnBadUrl() {
         sapphireDriver.flush(Set.of(request));
 
         waitForDriverRun(2);
@@ -115,7 +115,7 @@ public class SapphireDriverTest {
     }
 
     @Test
-    public void shouldFailOnCancelRequest() throws InterruptedException {
+    public void shouldFailOnCancelRequest() {
         sapphireDriver.flush(Set.of(request));
 
         waitForDriverRun(2);
@@ -126,7 +126,7 @@ public class SapphireDriverTest {
     }
 
     @Test
-    public void shouldNotCancelForRandomID() throws InterruptedException {
+    public void shouldNotCancelForRandomID() {
         sapphireDriver.flush(Set.of(request));
 
         waitForDriverRun(2);
