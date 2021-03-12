@@ -39,7 +39,6 @@ public class SapphireDriver implements NearlineStorage
         this.name = name;
         flushRequestQueue = new ConcurrentLinkedDeque<>();
         executorService = new ScheduledThreadPoolExecutor(1);
-        executorService.scheduleAtFixedRate(this::processFlush, 60, 60, TimeUnit.SECONDS);
     }
 
     /**
@@ -160,6 +159,11 @@ public class SapphireDriver implements NearlineStorage
         }
         MongoDatabase mongoDatabase = mongoClient.getDatabase(database);
         files = mongoDatabase.getCollection("files");
+
+        long schedulerPeriod = Long.parseLong(properties.getOrDefault("period", "1"));
+        TimeUnit periodUnit = TimeUnit.valueOf(properties.getOrDefault("period_unit", TimeUnit.MINUTES.name()));
+
+        executorService.scheduleAtFixedRate(this::processFlush, schedulerPeriod, schedulerPeriod, periodUnit);
     }
 
     /**
@@ -172,7 +176,9 @@ public class SapphireDriver implements NearlineStorage
     @Override
     public void shutdown()
     {
-        mongoClient.close();
+        if (mongoClient != null) {
+            mongoClient.close();
+        }
         executorService.shutdown();
     }
 
