@@ -9,6 +9,7 @@ import de.bwaldvogel.mongo.MongoServer;
 import de.bwaldvogel.mongo.backend.memory.MemoryBackend;
 
 import diskCacheV111.vehicles.GenericStorageInfo;
+import diskCacheV111.vehicles.StorageInfo;
 import org.bson.BasicBSONObject;
 import org.bson.Document;
 import org.dcache.pool.nearline.spi.FlushRequest;
@@ -61,11 +62,13 @@ public class SapphireDriverTest {
         sapphireDriver.configure(config);
 
         request = mock(FlushRequest.class);
+        StorageInfo si = GenericStorageInfo.valueOf("A:B@C", "*");
+        si.setKey("path", "/some/dcache/path/file1");
         when(request.getFileAttributes()).thenReturn(
                 FileAttributes.of()
                         .pnfsId(PNFS_ID)
                         .size(123)
-                        .storageInfo(GenericStorageInfo.valueOf("A:B@C", "*"))
+                        .storageInfo(si)
                         .build()
         );
         when(request.activate()).thenReturn(Futures.immediateFuture(null));
