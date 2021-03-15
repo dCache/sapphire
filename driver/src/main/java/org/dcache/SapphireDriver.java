@@ -59,7 +59,7 @@ public class SapphireDriver implements NearlineStorage
                 _log.debug("Added file to flushRequestQueue");
             } catch (ExecutionException | InterruptedException e) {
                 Throwable t = Throwables.getRootCause(e);
-                _log.error("Failed to active request ", t.getMessage());
+                _log.error("Failed to active request {}", t.getMessage());
                 flushRequest.failed(e);
             }
         }
