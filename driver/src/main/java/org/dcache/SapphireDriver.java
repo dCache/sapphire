@@ -225,9 +225,15 @@ public class SapphireDriver implements NearlineStorage
                     notYetReady.offer(request);
                 }
             } else {
+                Path path = Path.of(request.getFileAttributes().getStorageInfo().getKey("path"));
                 Document entry = new Document("pnfsid", pnfsid)
                         .append("store", request.getFileAttributes().getStorageInfo().getKey("store"))
-                        .append("group", request.getFileAttributes().getStorageInfo().getKey("group"));
+                        .append("group", request.getFileAttributes().getStorageInfo().getKey("group"))
+                        .append("path", path.toString())
+                        .append("parent", path.getParent().toString())
+                        .append("size", Integer.parseInt(Long.toString(request.getFileAttributes().getSize())))
+                        .append("ctime", Double.parseDouble(Long.toString(request.getReplicaCreationTime())) / 1000)
+                        .append("state", "new");
                 _log.debug("Inserting to database: {}", entry.toJson());
                 files.insertOne(entry);
                 notYetReady.offer(request);
