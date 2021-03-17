@@ -126,10 +126,9 @@ def main(configfile='/etc/dcache/container.conf'):
                                 filerecord = db.files.find_one({'pnfsid': f.filename,
                                                                 'state': f"archived: {archive['path']}"})
                                 if not filerecord:
-                                    logger.error(
-                                        f"File {f.filename} in ZipFile is not in MongoDB! Creating failure entry")
+                                    logger.error(f"File {f.filename} in ZipFile is not in MongoDB! "
+                                                 f"Creating failure entry")
                                     db.failures.insert_one({'archivePath': archive['path'], 'pnfsid': f.filename})
-                            print(f"Listed all entries from {archive}")
                             filelist = zip_file.filelist
                             zip_file.close()
 
@@ -137,6 +136,7 @@ def main(configfile='/etc/dcache/container.conf'):
                             logger.debug("Filepath: " + os.path.basename(archive['path']))
                             url = f"https://localhost:2881/archives/{os.path.basename(archive['path'])}"
                             logger.debug(f"URL: {url}")
+
                             headers = {"Content-type": "application/octet-stream"}
                             response = requests.put(url, data=open(archive['path'], 'rb'),
                                                     auth=auth, verify=False, headers=headers)
@@ -147,29 +147,34 @@ def main(configfile='/etc/dcache/container.conf'):
                                 logger.error(f"Uploading file failed: {response.status_code} -- {response}")
                                 continue
 
-                            headers = {"Want-Digest": "MD5,ADLER32,SHA1"}
+                            headers = {"Want-Digest": "ADLER32,MD5,SHA1"}
                             response = requests.head(f"https://localhost:2881/archives/{os.path.basename(archive['path'])}",
                                                      verify=False, auth=auth, headers=headers)
                             pnfsid = response.headers.get("ETag").split('_')[0].replace('"', '')
                             logger.info(f"PNFSID of Container {archive['path']} is {pnfsid}")
 
-                            checksum_mech, remote_checksum = response.headers.get("Digest").split('=', 1)
-                            if checksum_mech not in checksum_calculation.keys():
-                                logger.error(f"Checksum mechanism {checksum_mech} for file {archive['path']} is not supported")
+                            checksum_type, remote_checksum = response.headers.get("Digest").split('=', 1)
+                            if checksum_type not in checksum_calculation.keys():
+                                logger.error(f"Checksum mechanism {checksum_type} for file {archive['path']} is not supported")
                                 raise NotImplementedError()
-                            local_checksum = checksum_calculation[checksum_mech](archive['path'])
+                            local_checksum = checksum_calculation[checksum_type](archive['path'])
 
                             if remote_checksum == local_checksum:
                                 for file in filelist:
                                     file_entry = db.files.find_one({'pnfsid': file.filename})
+                                    if file_entry is None:
+                                        logger.error(f"No record found for {file.filename}")
                                     logger.debug(f"Update file {file.filename} now.")
-                                    archive_url = f"{type}://{name}/?store={file_entry['store']}&group={file_entry['group']}&bfid={file.filename}:{pnfsid}"
+                                    logger.debug(f"type: {type} name: {name} bfid: {file.filename}:{pnfsid}")
+                                    archive_url = f"{type}://{name}/?store={file_entry['store']}&group=" \
+                                                  f"{file_entry['group']}&bfid={file.filename}:{pnfsid}"
                                     logger.debug(f"ArchiveUrl: {archive_url}")
                                     file_entry['archiveUrl'] = archive_url
                                     file_entry['state'] = f"verified: {archive['path']}"
                                     db.files.replace_one({"pnfsid": file.filename}, file_entry)
                             else:
                                 logger.error("Checksums of local file and uploaded file doesn't match!")
+                            os.remove(archive['path'])
                         except BadZipfile as e:
                             logger.warning(f"Archive {archive['path']} is not ready yet. Will try again later.")
 
