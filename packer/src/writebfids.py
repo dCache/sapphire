@@ -115,8 +115,8 @@ def main(configfile='/etc/dcache/container.conf'):
                 db = client[mongoDb]
                 logging.info("Established db connection")
 
-                with db.archives.find() as archives:
-                    for archive in archives:
+                with db.archives.find() as db_archives:
+                    for archive in db_archives:
                         if not running:
                             logger.info("Exiting")
                             sys.exit(1)
@@ -133,14 +133,11 @@ def main(configfile='/etc/dcache/container.conf'):
                             zip_file.close()
 
                             auth = HTTPBasicAuth('admin', 'dickerelch')
-                            logger.debug("Filepath: " + os.path.basename(archive['path']))
                             url = f"https://localhost:2881/archives/{os.path.basename(archive['path'])}"
-                            logger.debug(f"URL: {url}")
 
                             headers = {"Content-type": "application/octet-stream"}
                             response = requests.put(url, data=open(archive['path'], 'rb'),
                                                     auth=auth, verify=False, headers=headers)
-                            logger.debug(f"Response: {response}")
                             if response.status_code == 201 or response.status_code == 200:
                                 logger.info(f"Archive uploaded successfully")
                             else:
@@ -175,6 +172,7 @@ def main(configfile='/etc/dcache/container.conf'):
                             else:
                                 logger.error("Checksums of local file and uploaded file doesn't match!")
                             os.remove(archive['path'])
+                            db.archives.delete_one({"path": archive['path']})
                         except BadZipfile as e:
                             logger.warning(f"Archive {archive['path']} is not ready yet. Will try again later.")
 
