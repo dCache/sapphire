@@ -141,11 +141,13 @@ def main(configfile='/etc/dcache/container.conf'):
         client = MongoClient(mongoUri)
         db = client[mongoDb]
         with db.archives.find() as db_archives:
+            logger.info(f"Found {db.archives.count_documents({})} new archives")
             for archive in db_archives:
                 if not running:
                     logger.info("Exiting")
                     sys.exit(0)
                 # Open ZIP-File and get filelist
+                logger.info(f"Processing archive {archive['path']}")
                 try:
                     zip_file = ZipFile(archive['path'], mode="r", allowZip64=True)
                     archive_pnfsidlist = [f.filename for f in zip_file.filelist]
@@ -167,6 +169,7 @@ def main(configfile='/etc/dcache/container.conf'):
                 db_pnfsidlist = db.files.find({"state": f"archived: {archive['path']}"})
                 db_pnfsidlist = [f['pnfsid'] for f in db_pnfsidlist]
                 sym_diff_filelist = set(archive_pnfsidlist).symmetric_difference(set(db_pnfsidlist))
+                logger.info(f"There were {len(sym_diff_filelist)} files with problems in archives")
                 for pnfsid in sym_diff_filelist:
                     if pnfsid in archive_pnfsidlist:
                         logger.warning(f"File {pnfsid} is in archive {archive['path']}, but not in MongoDB! Logging failure")
@@ -199,6 +202,7 @@ def main(configfile='/etc/dcache/container.conf'):
                 local_checksum = checksum_calculation[checksum_type](archive['path'])
 
                 # Compare Checksums
+                count_updated = 0
                 if remote_checksum == local_checksum:
                     for file_pnfsid in archive_pnfsidlist:
                         file_entry = db.files.find_one({'pnfsid': file_pnfsid})
@@ -209,12 +213,15 @@ def main(configfile='/etc/dcache/container.conf'):
                         file_entry['archiveUrl'] = archive_url
                         file_entry['state'] = f"verified: {archive['path']}"
                         db.files.replace_one({"pnfsid": file_pnfsid}, file_entry)
+                        count_updated += 1
+                    logger.info(f"Updated {count_updated} file records in MongoDB")
                 else:
                     print()  # TODO add functionality
 
                 # Cleanup
                 os.remove(archive['path'])
                 db.archives.delete_one({"path": archive['path']})
+                logger.info(f"Finished processing {archive['path']}")
             if client is not None:
                 client.close()
             time.sleep(60)
