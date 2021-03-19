@@ -161,22 +161,23 @@ def main(configfile='/etc/dcache/container.conf'):
                         file_result = db.files.find_one({"pnfsid": pnfsid})
                         file_result['state'] = "new"
                         db.files.replace_one({"pnfsid", pnfsid}, file_result)
-                        continue
+                        logger.debug(f"Resetted file with PNFSID {pnfsid}")
                 finally:
                     zip_file.close()
 
                 # Check if every file that should be in the archive is there
                 db_pnfsidlist = db.files.find({"state": f"archived: {archive['path']}"})
                 db_pnfsidlist = [f['pnfsid'] for f in db_pnfsidlist]
-                sym_diff_filelist = set(archive_pnfsidlist).symmetric_difference(set(db_pnfsidlist))
-                logger.info(f"There were {len(sym_diff_filelist)} files with problems in archives")
-                for pnfsid in sym_diff_filelist:
+                sym_diff_pnfsidlist = set(archive_pnfsidlist).symmetric_difference(set(db_pnfsidlist))
+                logger.info(f"There were {len(sym_diff_pnfsidlist)} files with problems in archive")
+                for pnfsid in sym_diff_pnfsidlist:
                     if pnfsid in archive_pnfsidlist:
-                        logger.warning(f"File {pnfsid} is in archive {archive['path']}, but not in MongoDB! Logging failure")
+                        logger.warning(f"File {pnfsid} is in archive {archive['path']}, but not in MongoDB! "
+                                       f"Creating new entry to failures collection")
                         db.failures.insert_one({'archivePath': archive['path'], 'pnfsid': pnfsid})
                     elif pnfsid in db_pnfsidlist:
-                        logger.warning(f"File {pnfsid} is listed in MongoDB for archive {archive['path']}, but isn't "
-                                       f"there. Resetting file for packing into new archive")
+                        logger.warning(f"File {pnfsid} is listed in MongoDB to be in archive {archive['path']}, "
+                                       f"but isn't there. Resetting file for packing into new archive")
                         db_file = db.files.find_one({"pnfsid": pnfsid})
                         db_file['state'] = "new"
                         db.files.replace_one({"pnfsid": pnfsid}, db_file)
@@ -186,6 +187,7 @@ def main(configfile='/etc/dcache/container.conf'):
                 url = f"https://localhost:2881/archives/{os.path.basename(archive['path'])}"  # TODO make it configurable
                 headers = {"Content-type": "application/octet-stream"}
                 response = requests.put(url, data=open(archive['path'], 'rb'), verify=False, auth=auth, headers=headers)
+                logger.debug(f"Uploading zip-file finished with status code {response.status_code}")
                 if response.status_code not in (200, 201):
                     print()  # TODO add functionality
                     continue
@@ -193,16 +195,22 @@ def main(configfile='/etc/dcache/container.conf'):
                 # Request PNFSID and Checksum from dCache, calculate local checksum
                 headers = {"Want-Digest": "ADLER32,MD5,SHA1"}
                 response = requests.head(url, verify=False, auth=auth, headers=headers)
+                logger.debug(f"Requesting PNFSID and checksum of zip-file finished with status code "
+                             f"{response.status_code}")
                 if response not in (201, 200):
                     print()  # TODO add functionality
+
                 pnfsid = response.headers.get("ETag").split('_')[0].replace('"', '')
                 checksum_type, remote_checksum = response.headers.get("Digest").split('=', 1)
                 if checksum_type not in checksum_calculation.keys():
+                    logger.error(f"Checksum type {checksum_type} is not implemented!")
                     raise NotImplementedError()
                 local_checksum = checksum_calculation[checksum_type](archive['path'])
 
                 # Compare Checksums
                 count_updated = 0
+                logger.debug(f"Checksum of archive locally: {local_checksum}, on dCache: {remote_checksum}; "
+                             f"Checksum type: {checksum_type}")
                 if remote_checksum == local_checksum:
                     for file_pnfsid in archive_pnfsidlist:
                         file_entry = db.files.find_one({'pnfsid': file_pnfsid})
@@ -214,13 +222,16 @@ def main(configfile='/etc/dcache/container.conf'):
                         file_entry['state'] = f"verified: {archive['path']}"
                         db.files.replace_one({"pnfsid": file_pnfsid}, file_entry)
                         count_updated += 1
+                        logger.debug(f"Updated file with pnfsid {file_pnfsid}")
                     logger.info(f"Updated {count_updated} file records in MongoDB")
                 else:
                     print()  # TODO add functionality
 
                 # Cleanup
                 os.remove(archive['path'])
+                logger.debug(f"Deleted local archive {archive['path']}")
                 db.archives.delete_one({"path": archive['path']})
+                logger.debug(f"Removed MongoDB record in archives for archive {archive['path']}")
                 logger.info(f"Finished processing {archive['path']}")
             if client is not None:
                 client.close()
@@ -231,7 +242,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, sigint_handler)
     sys.excepthook = uncaught_handler
     if not os.getuid() == 0:
-        print("writebfsids.py must run as root!")
+        print("writebfids.py must run as root!")
         sys.exit(2)
 
     if len(sys.argv) == 1:
