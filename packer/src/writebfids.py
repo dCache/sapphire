@@ -186,19 +186,54 @@ def main(configfile='/etc/dcache/container.conf'):
                 auth = HTTPBasicAuth('admin', 'dickerelch')  # TODO make it configurable
                 url = f"https://localhost:2881/archives/{os.path.basename(archive['path'])}"  # TODO make it configurable
                 headers = {"Content-type": "application/octet-stream"}
-                response = requests.put(url, data=open(archive['path'], 'rb'), verify=False, auth=auth, headers=headers)
-                logger.debug(f"Uploading zip-file finished with status code {response.status_code}")
-                if response.status_code not in (200, 201):
-                    print()  # TODO add functionality
-                    continue
+                retry_counter = 0
+                response_status_code = 0
+                while retry_counter <= 3 and response_status_code not in (200, 201):
+                    try:
+                        response = requests.put(url, data=open(archive['path'], 'rb'), verify=False, auth=auth, headers=headers)
+                    except Exception as e:
+                        logger.error(f"An exception occured while uploading zip-file to dCache. Will retry in a "
+                                     f"few seconds: {e}")
+                        retry_counter += 1
+                        time.sleep(10)
+                        continue
+                    response_status_code = response.status_code
+                    logger.debug(f"Uploading zip-file finished with status code {response_status_code}")
+                    if response_status_code not in (200, 201):
+                        logger.info(f"Uploading file to dCache failed as the returned status code, "
+                                    f"{response_status_code}, is not 200 or 201. Retrying in a few seconds.")
+                        retry_counter += 1
+                        time.sleep(10)
+                if retry_counter == 4:
+                    logger.critical(f"Zip-file could not be uploaded to dCache, even after retrying "
+                                    f"{retry_counter - 1} time(s). Please check your dCache! Exiting script now...")
+                    sys.exit(1)
 
                 # Request PNFSID and Checksum from dCache, calculate local checksum
                 headers = {"Want-Digest": "ADLER32,MD5,SHA1"}
-                response = requests.head(url, verify=False, auth=auth, headers=headers)
-                logger.debug(f"Requesting PNFSID and checksum of zip-file finished with status code "
-                             f"{response.status_code}")
-                if response not in (201, 200):
-                    print()  # TODO add functionality
+                retry_counter = 0
+                response_status_code = 0
+                while retry_counter <= 3 and response_status_code not in (200, 201):
+                    try:
+                        response = requests.head(url, verify=False, auth=auth, headers=headers)
+                    except Exception as e:
+                        logger.error(f"An exception occured while requesting checksum and pnfsid. Will retry in a "
+                                     f"few seconds: {e}")
+                        retry_counter += 1
+                        time.sleep(10)
+                        continue
+                    response_status_code = response.status_code
+                    logger.debug(f"Requesting checksum and pnfsid finished with status code {response_status_code}")
+                    if response_status_code not in (200, 201):
+                        logger.info(f"Requesting checksum and pnfsid failed as the returned status code, "
+                                    f"{response_status_code}, is not 200 or 201. Retrying in a few seconds.")
+                        retry_counter += 1
+                        time.sleep(10)
+                if retry_counter == 4:
+                    logger.critical(f"Checksum and pnfsid of zip-file could not be requested from dCache, even after "
+                                    f"retrying {retry_counter - 1} time(s). Please chack your dCache! Exiting script "
+                                    f"now...")
+                    sys.exit(1)
 
                 pnfsid = response.headers.get("ETag").split('_')[0].replace('"', '')
                 checksum_type, remote_checksum = response.headers.get("Digest").split('=', 1)
@@ -225,7 +260,17 @@ def main(configfile='/etc/dcache/container.conf'):
                         logger.debug(f"Updated file with pnfsid {file_pnfsid}")
                     logger.info(f"Updated {count_updated} file records in MongoDB")
                 else:
-                    print()  # TODO add functionality
+                    logger.error(f"Checksums of local and remote zip-file didn't match. Going to delete archive to "
+                                 f"reupload it next run.")
+                    # delete file on dCache
+                    auth = HTTPBasicAuth('admin', 'dickerelch')  # TODO make it configurable
+                    url = f"https://localhost:2881/archives/{os.path.basename(archive['path'])}"  # TODO make it configurable
+                    response = requests.delete(url, auth=auth, verify=False)
+                    if response.status_code == 204:
+                        logger.info(f"Archive was successfully deleted from dCache.")
+                    else:
+                        logger.info(f"Archive wasn't deleted from dCache, status code: {response.status_code}")
+                        continue
 
                 # Cleanup
                 os.remove(archive['path'])
