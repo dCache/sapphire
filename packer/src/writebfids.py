@@ -79,9 +79,6 @@ def main(configfile='/etc/dcache/container.conf'):
                             }
     logger = logging.getLogger()
     log_handler = None
-    # Make this configurable (via MongoDB)
-    osm_type = "osm"
-    osm_name = "osm"
 
     while running:
         # Read configuration
@@ -235,7 +232,7 @@ def main(configfile='/etc/dcache/container.conf'):
                                     f"now...")
                     sys.exit(1)
 
-                pnfsid = response.headers.get("ETag").split('_')[0].replace('"', '')
+                archive_pnfsid = response.headers.get("ETag").split('_')[0].replace('"', '')
                 checksum_type, remote_checksum = response.headers.get("Digest").split('=', 1)
                 if checksum_type not in checksum_calculation.keys():
                     logger.error(f"Checksum type {checksum_type} is not implemented!")
@@ -251,8 +248,10 @@ def main(configfile='/etc/dcache/container.conf'):
                         file_entry = db.files.find_one({'pnfsid': file_pnfsid})
                         if file_entry is None:
                             continue
-                        archive_url = f"{osm_type}://{osm_name}/?store={file_entry['store']}&group=" \
-                                      f"{file_entry['group']}&bfid={file_pnfsid}:{pnfsid}"
+                        hsm_type = file_entry['hsm_type']
+                        hsm_name = file_entry['hsm_name']
+                        archive_url = f"{hsm_type}://{hsm_name}/?store={file_entry['store']}&group=" \
+                                      f"{file_entry['group']}&bfid={file_pnfsid}:{archive_pnfsid}"
                         file_entry['archiveUrl'] = archive_url
                         file_entry['state'] = f"verified: {archive['path']}"
                         db.files.replace_one({"pnfsid": file_pnfsid}, file_entry)
