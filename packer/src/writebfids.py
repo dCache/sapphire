@@ -18,13 +18,6 @@ import base64
 
 running = True
 
-archiveUser = ""
-archiveMode = ""
-mountPoint = ""
-dataRoot = ""
-mongoUri = ""
-mongoDb = ""
-
 
 def sigint_handler(signum, frame):
     global running
@@ -64,13 +57,6 @@ def _sha1(filepath):
 def main(configfile='/etc/dcache/container.conf'):
     # global variables
     global running
-    # are they needed?
-    global archiveUser
-    global archiveMode
-    global mountPoint
-    global dataRoot
-    global mongoUri
-    global mongoDb
 
     # general variables
     checksum_calculation = {"md5": _md5,
@@ -90,12 +76,8 @@ def main(configfile='/etc/dcache/container.conf'):
             configuration.read(configfile)
             script_id = configuration.get('DEFAULT', 'script_id')
             log_level_str = configuration.get('DEFAULT', 'log_level')
-            archiveUser = configuration.get('DEFAULT', 'archiveUser')
-            archiveMode = configuration.get('DEFAULT', 'archiveMode')
-            mountPoint = configuration.get('DEFAULT', 'mount_point')
-            dataRoot = configuration.get('DEFAULT', 'data_root')
-            mongoUri = configuration.get('DEFAULT', 'mongo_url')
-            mongoDb = configuration.get('DEFAULT', 'mongo_db')
+            mongo_uri = configuration.get('DEFAULT', 'mongo_url')
+            mongo_db = configuration.get('DEFAULT', 'mongo_db')
         except FileNotFoundError as e:
             logger.critical(f'Configuration file "{configfile}" not found. Exiting now.')
             sys.exit(1)
@@ -135,8 +117,8 @@ def main(configfile='/etc/dcache/container.conf'):
         logging.info(f'Successfully read configuration from file {configfile}.')
 
         # Connect to database and get archives
-        client = MongoClient(mongoUri)
-        db = client[mongoDb]
+        client = MongoClient(mongo_uri)
+        db = client[mongo_db]
         with db.archives.find() as db_archives:
             logger.info(f"Found {db.archives.count_documents({})} new archives")
             for archive in db_archives:
