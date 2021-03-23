@@ -78,6 +78,7 @@ def main(configfile='/etc/dcache/container.conf'):
             log_level_str = configuration.get('DEFAULT', 'log_level')
             mongo_uri = configuration.get('DEFAULT', 'mongo_url')
             mongo_db = configuration.get('DEFAULT', 'mongo_db')
+            webdav_door = configuration.get('DEFAULT', 'webdav_door')
         except FileNotFoundError as e:
             logger.critical(f'Configuration file "{configfile}" not found. Exiting now.')
             sys.exit(1)
@@ -125,6 +126,7 @@ def main(configfile='/etc/dcache/container.conf'):
                 if not running:
                     logger.info("Exiting")
                     sys.exit(0)
+                url = f"{webdav_door}/{archive['dest_path']}/{os.path.basename(archive['path'])}"
                 # Open ZIP-File and get filelist
                 logger.info(f"Processing archive {archive['path']}")
                 try:
@@ -162,8 +164,7 @@ def main(configfile='/etc/dcache/container.conf'):
                         db.files.replace_one({"pnfsid": pnfsid}, db_file)
 
                 # Upload zip-file to dCache
-                auth = HTTPBasicAuth('admin', 'dickerelch')  # TODO make it configurable
-                url = f"https://localhost:2881/archives/{os.path.basename(archive['path'])}"  # TODO make it configurable
+                auth = HTTPBasicAuth('admin', 'dickerelch')  # TODO change to use macaroon
                 headers = {"Content-type": "application/octet-stream"}
                 retry_counter = 0
                 response_status_code = 0
@@ -244,8 +245,7 @@ def main(configfile='/etc/dcache/container.conf'):
                     logger.error(f"Checksums of local and remote zip-file didn't match. Going to delete archive to "
                                  f"reupload it next run.")
                     # delete file on dCache
-                    auth = HTTPBasicAuth('admin', 'dickerelch')  # TODO make it configurable
-                    url = f"https://localhost:2881/archives/{os.path.basename(archive['path'])}"  # TODO make it configurable
+                    auth = HTTPBasicAuth('admin', 'dickerelch')  # TODO change to macaroon
                     response = requests.delete(url, auth=auth, verify=False)
                     if response.status_code == 204:
                         logger.info(f"Archive was successfully deleted from dCache.")
