@@ -13,7 +13,6 @@ import logging
 import logging.handlers
 import traceback
 import requests
-from requests.auth import HTTPBasicAuth
 import base64
 
 running = True
@@ -79,6 +78,7 @@ def main(configfile='/etc/dcache/container.conf'):
             mongo_uri = configuration.get('DEFAULT', 'mongo_url')
             mongo_db = configuration.get('DEFAULT', 'mongo_db')
             webdav_door = configuration.get('DEFAULT', 'webdav_door')
+            macaroon = configuration.get('DEFAULT', 'macaroon')
         except FileNotFoundError as e:
             logger.critical(f'Configuration file "{configfile}" not found. Exiting now.')
             sys.exit(1)
@@ -164,13 +164,13 @@ def main(configfile='/etc/dcache/container.conf'):
                         db.files.replace_one({"pnfsid": pnfsid}, db_file)
 
                 # Upload zip-file to dCache
-                auth = HTTPBasicAuth('admin', 'dickerelch')  # TODO change to use macaroon
-                headers = {"Content-type": "application/octet-stream"}
+                headers = {"Content-type": "application/octet-stream",
+                           "Authorization": f"Bearer {macaroon}"}
                 retry_counter = 0
                 response_status_code = 0
                 while retry_counter <= 3 and response_status_code not in (200, 201):
                     try:
-                        response = requests.put(url, data=open(archive['path'], 'rb'), verify=False, auth=auth, headers=headers)
+                        response = requests.put(url, data=open(archive['path'], 'rb'), verify=False, headers=headers)
                     except Exception as e:
                         logger.error(f"An exception occured while uploading zip-file to dCache. Will retry in a "
                                      f"few seconds: {e}")
@@ -190,12 +190,13 @@ def main(configfile='/etc/dcache/container.conf'):
                     sys.exit(1)
 
                 # Request PNFSID and Checksum from dCache, calculate local checksum
-                headers = {"Want-Digest": "ADLER32,MD5,SHA1"}
+                headers = {"Want-Digest": "ADLER32,MD5,SHA1",
+                           "Authorization": f"Bearer {macaroon}"}
                 retry_counter = 0
                 response_status_code = 0
                 while retry_counter <= 3 and response_status_code not in (200, 201):
                     try:
-                        response = requests.head(url, verify=False, auth=auth, headers=headers)
+                        response = requests.head(url, verify=False, headers=headers)
                     except Exception as e:
                         logger.error(f"An exception occured while requesting checksum and pnfsid. Will retry in a "
                                      f"few seconds: {e}")
@@ -245,8 +246,8 @@ def main(configfile='/etc/dcache/container.conf'):
                     logger.error(f"Checksums of local and remote zip-file didn't match. Going to delete archive to "
                                  f"reupload it next run.")
                     # delete file on dCache
-                    auth = HTTPBasicAuth('admin', 'dickerelch')  # TODO change to macaroon
-                    response = requests.delete(url, auth=auth, verify=False)
+                    headers = {"Authorization": f"Bearer {macaroon}"}
+                    response = requests.delete(url, headers=headers, verify=False)
                     if response.status_code == 204:
                         logger.info(f"Archive was successfully deleted from dCache.")
                     else:
