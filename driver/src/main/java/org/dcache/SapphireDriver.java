@@ -11,6 +11,7 @@ import java.util.function.Predicate;
 import static com.mongodb.client.model.Filters.*;
 
 import com.google.common.base.Throwables;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.mongodb.MongoSocketOpenException;
 import com.mongodb.client.*;
 import org.bson.Document;
@@ -39,7 +40,10 @@ public class SapphireDriver implements NearlineStorage
         this.type = type;
         this.name = name;
         flushRequestQueue = new ConcurrentLinkedDeque<>();
-        executorService = new ScheduledThreadPoolExecutor(1);
+        executorService = new ScheduledThreadPoolExecutor(1,
+                new ThreadFactoryBuilder()
+                .setNameFormat("sapphire-nearline-storage-%d").build()
+        );
     }
 
     /**
