@@ -83,23 +83,18 @@ def main(configfile='/etc/dcache/container.conf'):
             logger.critical(f'Configuration file "{configfile}" not found. Exiting now.')
             sys.exit(1)
         except parser.NoSectionError as e:
-            # Section DEFAULT nicht gefunden
             logger.critical(f'Section [DEFAULT] was not found in "{configfile}". This section is mandatory, exiting now.')
             sys.exit(1)
         except parser.NoOptionError as e:
-            # Option (e.g. data_root) not found in section
             logger.critical(f'An option is missing in section [DEFAULT] of file "{configfile}", exiting now: {e}')
             sys.exit(1)
         except parser.MissingSectionHeaderError as e:
-            # file doesn't contain section header
             logger.critical(f'The file "{configfile}" doesn\'t contain section headers. Exiting now')
             sys.exit(1)
         except parser.ParsingError as e:
-            # error while parsing
             logger.critical(f'There was an error parsing while parsing the configuration "{configfile}", exiting now: {e}')
             sys.exit(1)
         except parser.Error as e:
-            # Base class of other configparser exceptions, maybe delete this
             logger.critical(f'An error occurred while reading the configuration file {configfile}, exiting now: {e}')
             sys.exit(1)
 
