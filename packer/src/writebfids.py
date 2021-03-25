@@ -42,7 +42,10 @@ def _md5(filepath):
 def _adler32(filepath):  # Does this work for large files?
     with open(filepath, "rb") as file:
         adler32_value = adler32(file.read())
-    return hex(adler32_value)[2:]
+    checksum = hex(adler32_value)[2:]
+    while len(checksum) < 8:
+        checksum = f"0{checksum}"
+    return checksum
 
 
 def _sha1(filepath):
@@ -243,11 +246,12 @@ def main(configfile='/etc/dcache/container.conf'):
                     # delete file on dCache
                     headers = {"Authorization": f"Bearer {macaroon}"}
                     response = requests.delete(url, headers=headers, verify=False)
+
                     if response.status_code == 204:
                         logger.info(f"Archive was successfully deleted from dCache.")
                     else:
                         logger.info(f"Archive wasn't deleted from dCache, status code: {response.status_code}")
-                        continue
+                    continue
 
                 # Cleanup
                 os.remove(archive['path'])
