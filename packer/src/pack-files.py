@@ -200,6 +200,8 @@ class GroupPackager:
                 self.logger.error(traceback.print_exc())
                 mongo_db.files.update_many({'state': f"added: {container.filepath}"}, {"$set": {"state": "new"},
                                                                                        "$unset": {"lock": ""}})
+                if os.path.exists(container.filepath):
+                    os.remove(container.filepath)
             except errors.OperationFailure as e:
                 self.logger.error(f"Operation Exception in database communication while creating container "
                                   f"{container.filepath}. Please Check!\n{e}")
