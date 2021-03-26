@@ -110,7 +110,6 @@ public class SapphireDriver implements NearlineStorage
                 .ifPresent(request ->  {
                     if (flushRequestQueue.removeIf(byUUID)) {
                         files.deleteOne(new Document("pnfsid", request.getFileAttributes().getPnfsId().toString()));
-                        request.failed(new CancellationException());
                     }
                 });
     }
