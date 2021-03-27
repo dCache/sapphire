@@ -230,7 +230,7 @@ public class SapphireDriver implements NearlineStorage
                         .append("group", request.getFileAttributes().getStorageInfo().getKey("group"))
                         .append("path", path.toString())
                         .append("parent", path.getParent().toString())
-                        .append("size", Integer.parseInt(Long.toString(request.getFileAttributes().getSize())))
+                        .append("size", request.getFileAttributes().getSize())
                         .append("ctime", Double.parseDouble(Long.toString(request.getReplicaCreationTime())) / 1000)
                         .append("state", "new");
                 _log.debug("Inserting to database: {}", entry.toJson());
