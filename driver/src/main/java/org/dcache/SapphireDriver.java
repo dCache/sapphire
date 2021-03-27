@@ -60,7 +60,7 @@ public class SapphireDriver implements NearlineStorage
             try {
                 flushRequest.activate().get();
                 flushRequestQueue.add(flushRequest);
-                _log.debug("Added file to flushRequestQueue");
+                _log.debug("Added {} to flushRequestQueue", flushRequest.getFileAttributes().getPnfsId());
             } catch (ExecutionException | InterruptedException e) {
                 Throwable t = Throwables.getRootCause(e);
                 _log.error("Failed to activate request {}", t.getMessage());
