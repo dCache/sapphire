@@ -20,6 +20,7 @@ import org.dcache.pool.nearline.spi.FlushRequest;
 import org.dcache.pool.nearline.spi.NearlineStorage;
 import org.dcache.pool.nearline.spi.RemoveRequest;
 import org.dcache.pool.nearline.spi.StageRequest;
+import org.dcache.util.FireAndForgetTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,10 +41,13 @@ public class SapphireDriver implements NearlineStorage
         this.type = type;
         this.name = name;
         flushRequestQueue = new ConcurrentLinkedDeque<>();
-        executorService = new ScheduledThreadPoolExecutor(1,
-                new ThreadFactoryBuilder()
-                .setNameFormat("sapphire-nearline-storage-%d").build()
-        );
+
+        ThreadFactory threadFactory = new ThreadFactoryBuilder()
+                .setNameFormat("sapphire-nearline-storage-%d")
+                .setUncaughtExceptionHandler(this::uncaughtException)
+                .build();
+
+        executorService = new ScheduledThreadPoolExecutor(1, threadFactory);
     }
 
     /**
@@ -167,7 +171,7 @@ public class SapphireDriver implements NearlineStorage
         long schedulerPeriod = Long.parseLong(properties.getOrDefault("period", "1"));
         TimeUnit periodUnit = TimeUnit.valueOf(properties.getOrDefault("period_unit", TimeUnit.MINUTES.name()));
 
-        executorService.scheduleAtFixedRate(this::processFlush, schedulerPeriod, schedulerPeriod, periodUnit);
+        executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processFlush), schedulerPeriod, schedulerPeriod, periodUnit);
     }
 
     /**
@@ -244,5 +248,9 @@ public class SapphireDriver implements NearlineStorage
         }
         _log.debug("NotYetReady size: {} will be added to flushRequestQueue now", notYetReady.size());
         flushRequestQueue.addAll(notYetReady);
+    }
+
+    private void uncaughtException(Thread t, Throwable e) {
+        _log.error("Uncaught exception in {}", t.getName(), e);
     }
 }
