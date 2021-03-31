@@ -124,6 +124,7 @@ public class SapphireDriverTest {
         waitForDriverRun(2);
 
         sapphireDriver.cancel(UUID.fromString(REQUEST_ID));
+        verify(request).failed(any(CancellationException.class));
         assertNull(collection.find(eq("pnfsid", PNFS_ID)).first(), "Canceled entry not removed");
     }
 
