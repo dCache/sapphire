@@ -101,6 +101,13 @@ def main(configfile='/etc/dcache/container.conf'):
             logger.critical(f'An error occurred while reading the configuration file {configfile}, exiting now: {e}')
             sys.exit(1)
 
+        logger.debug(f"Script ID: {script_id}")
+        logger.debug(f"Log level: {log_level_str}")
+        logger.debug(f"Mongo URI: {mongo_uri}")
+        logger.debug(f"Mongo database: {mongo_db}")
+        logger.debug(f"Webdav Door: {webdav_door}")
+        logger.debug(f"Macaroon: {macaroon}")
+
         log_level = getattr(logging, log_level_str.upper(), None)
         logger.setLevel(log_level)
 
@@ -113,7 +120,7 @@ def main(configfile='/etc/dcache/container.conf'):
         log_handler.setFormatter(formatter)
         logger.addHandler(log_handler)
 
-        logging.info(f'Successfully read configuration from file {configfile}.')
+        logger.info(f'Successfully read configuration from file {configfile}.')
 
         # Connect to database and get archives
         client = MongoClient(mongo_uri)
@@ -136,7 +143,7 @@ def main(configfile='/etc/dcache/container.conf'):
                 except FileNotFoundError:
                     logger.error(f"Container {archive['path']} could not be found on local disk. Files, that should be "
                                  f"in this archive, are now reset to be packed again.")
-                    for pnfsid in archive_pnfsidlist:
+                    for pnfsid in db.files.find({"state": f"archived: {archive['path']}"}):
                         file_result = db.files.find_one({"pnfsid": pnfsid})
                         file_result['state'] = "new"
                         db.files.replace_one({"pnfsid", pnfsid}, file_result)
@@ -168,7 +175,7 @@ def main(configfile='/etc/dcache/container.conf'):
                 response_status_code = 0
                 while retry_counter <= 3 and response_status_code not in (200, 201):
                     try:
-                        response = requests.put(url, data=open(archive['path'], 'rb'), verify=False, headers=headers)
+                        response = requests.put(url, data=open(archive['path'], 'rb'), verify=True, headers=headers)
                     except Exception as e:
                         logger.error(f"An exception occured while uploading zip-file to dCache. Will retry in a "
                                      f"few seconds: {e}")
@@ -216,7 +223,7 @@ def main(configfile='/etc/dcache/container.conf'):
 
                 archive_pnfsid = response.headers.get("ETag").split('_')[0].replace('"', '')
                 checksum_type, remote_checksum = response.headers.get("Digest").split('=', 1)
-                if checksum_type not in checksum_calculation.keys():
+                if str.lower(checksum_type) not in checksum_calculation.keys():
                     logger.error(f"Checksum type {checksum_type} is not implemented!")
                     raise NotImplementedError()
                 local_checksum = checksum_calculation[checksum_type](archive['path'])
@@ -241,11 +248,11 @@ def main(configfile='/etc/dcache/container.conf'):
                         logger.debug(f"Updated file with pnfsid {file_pnfsid}")
                     logger.info(f"Updated {count_updated} file records in MongoDB")
                 else:
-                    logger.error(f"Checksums of local and remote zip-file didn't match. Going to delete archive to "
-                                 f"reupload it next run.")
+                    logger.error(f"Checksums of local and remote zip-file didn't match. Going to delete remote archive "
+                                 f"to reupload it next run.")
                     # delete file on dCache
                     headers = {"Authorization": f"Bearer {macaroon}"}
-                    response = requests.delete(url, headers=headers, verify=False)
+                    response = requests.delete(url, headers=headers, verify=True)
 
                     if response.status_code == 204:
                         logger.info(f"Archive was successfully deleted from dCache.")
