@@ -257,6 +257,7 @@ class Container:
 
     def pack(self):
         for pnfsid in self.content_dict:
+            self.logger.debug(f"pack {pnfsid} to archive {self.filename};path {self.content_dict[pnfsid]['localpath']}")
             self.zip_file.write(self.content_dict[pnfsid]['localpath'], arcname=pnfsid)
 
         # self.download_files()
@@ -395,10 +396,10 @@ def main(configfile="/etc/dcache/container.conf"):
                         packager.run()
 
             except Exception as e:
-                print(f"Exception occured: {type(e)} -- {e}\n\n{traceback.print_exc()}")
+                logger.error(f"Exception occured: {type(e)} -- {e}\n\n{traceback.print_exc()}")
 
         except Exception as e:
-            print(f"Exception occured: {type(e)} -- {e}\n\n{traceback.print_exc()}")
+            logger.error(f"Exception occured: {type(e)} -- {e}\n\n{traceback.print_exc()}")
         time.sleep(int(loop_delay))
 
 
