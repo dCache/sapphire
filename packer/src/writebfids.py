@@ -143,13 +143,18 @@ def main(configfile='/etc/dcache/container.conf'):
                 except FileNotFoundError:
                     logger.error(f"Container {archive['path']} could not be found on local disk. Files, that should be "
                                  f"in this archive, are now reset to be packed again.")
-                    for pnfsid in db.files.find({"state": f"archived: {archive['path']}"}):
+                    for archived in db.files.find({"state": f"archived: {archive['path']}"}):
+                        pnfsid = archived['pnfsid']
                         file_result = db.files.find_one({"pnfsid": pnfsid})
                         file_result['state'] = "new"
                         db.files.replace_one({"pnfsid", pnfsid}, file_result)
                         logger.debug(f"Resetted file with PNFSID {pnfsid}")
+                    db.archives.delete_one({"path": archive['path']})
+                    continue
                 finally:
-                    zip_file.close()
+                    if "zip_file" in locals():
+                        zip_file.close()
+                        logger.debug("File closed")
 
                 # Check if every file that should be in the archive is there
                 db_pnfsidlist = db.files.find({"state": f"archived: {archive['path']}"})
