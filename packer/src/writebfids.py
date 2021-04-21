@@ -147,7 +147,7 @@ def main(configfile='/etc/dcache/container.conf'):
                         pnfsid = archived['pnfsid']
                         file_result = db.files.find_one({"pnfsid": pnfsid})
                         file_result['state'] = "new"
-                        db.files.replace_one({"pnfsid", pnfsid}, file_result)
+                        db.files.replace_one({"pnfsid": pnfsid}, file_result)
                         logger.debug(f"Resetted file with PNFSID {pnfsid}")
                     db.archives.delete_one({"path": archive['path']})
                     continue
@@ -206,7 +206,7 @@ def main(configfile='/etc/dcache/container.conf'):
                 response_status_code = 0
                 while retry_counter <= 3 and response_status_code not in (200, 201):
                     try:
-                        response = requests.head(url, verify=False, headers=headers)
+                        response = requests.head(url, verify=True, headers=headers)
                     except Exception as e:
                         logger.error(f"An exception occured while requesting checksum and pnfsid. Will retry in a "
                                      f"few seconds: {e}")
@@ -231,7 +231,26 @@ def main(configfile='/etc/dcache/container.conf'):
                 if str.lower(checksum_type) not in checksum_calculation.keys():
                     logger.error(f"Checksum type {checksum_type} is not implemented!")
                     raise NotImplementedError()
-                local_checksum = checksum_calculation[checksum_type](archive['path'])
+                try:
+                    local_checksum = checksum_calculation[checksum_type](archive['path'])
+                except FileNotFoundError as e:
+                    logger.error(f"Archive {archive['path']} could not be found for checksum calculation! Deleting "
+                                 f"uploaded file and resetting files that should be in this archive to get packed "
+                                 f"again.")
+                    for pnfsid in archive_pnfsidlist:
+                        file_result = db.files.find_one({"pnfsid": pnfsid})
+                        file_result['state'] = "new"
+                        db.files.replace_one({"pnfsid": pnfsid}, file_result)
+                        logger.debug(f"Resetted file with PNFSID {pnfsid}")
+                    headers = {"Authorization": f"Bearer {macaroon}"}
+                    response = requests.delete(url, headers=headers, verify=True)
+                    if response.status_code == 204:
+                        logger.info(f"Archive was successfully deleted from dCache.")
+                    else:
+                        logger.info(f"Archive wasn't deleted from dCache, status code: {response.status_code}")
+
+                    db.archives.delete_one({"path": archive['path']})
+                    continue
 
                 # Compare Checksums
                 count_updated = 0
@@ -266,7 +285,10 @@ def main(configfile='/etc/dcache/container.conf'):
                     continue
 
                 # Cleanup
-                os.remove(archive['path'])
+                try:
+                    os.remove(archive['path'])
+                except FileNotFoundError as e:
+                    logger.warning(f"Archive {archive['path']} could not be removed as the file was not found.")
                 logger.debug(f"Deleted local archive {archive['path']}")
                 db.archives.delete_one({"path": archive['path']})
                 logger.debug(f"Removed MongoDB record in archives for archive {archive['path']}")
