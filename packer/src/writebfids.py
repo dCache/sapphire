@@ -58,6 +58,60 @@ def _sha1(filepath):
     return sha1_value.hexdigest()
 
 
+def get_config(configfile):
+    # function reads config and returns object
+    configuration = parser.RawConfigParser(defaults={'scriptId': 'pack', 'mongoUri': 'mongodb://localhost/',
+                                                     'mongoDb': 'smallfiles', 'logLevel': 'ERROR'})
+
+    try:
+        if not os.path.isfile(configfile):
+            raise FileNotFoundError
+        configuration.read(configfile)
+        script_id = configuration.get('DEFAULT', 'script_id')
+        log_level_str = configuration.get('DEFAULT', 'log_level')
+        mongo_uri = configuration.get('DEFAULT', 'mongo_url')
+        mongo_db = configuration.get('DEFAULT', 'mongo_db')
+        webdav_door = configuration.get('DEFAULT', 'webdav_door')
+        macaroon = configuration.get('DEFAULT', 'macaroon')
+    except FileNotFoundError as e:
+        logging.critical(f'Configuration file "{configfile}" not found.')
+        raise
+    except parser.NoSectionError as e:
+        logging.critical(
+            f'Section [DEFAULT] was not found in "{configfile}". This section is mandatory.')
+        raise
+    except parser.NoOptionError as e:
+        logging.critical(f'An option is missing in section [DEFAULT] of file "{configfile}", exiting now: {e}')
+        raise
+    except KeyError as e:
+        logging.critical(f"There's something wrong with a key, {e}")
+        raise
+    except parser.MissingSectionHeaderError as e:
+        logging.critical(f'The file "{configfile}" doesn\'t contain section headers. Exiting now')
+        raise
+    except parser.ParsingError as e:
+        logging.critical(
+            f'There was an error parsing while parsing the configuration "{configfile}", exiting now: {e}')
+        raise
+    except parser.DuplicateSectionError as e:
+        logging.critical(f"There are duplicated sections: {e}")
+        raise
+    except parser.DuplicateOptionError as e:
+        logging.critical(f"There are duplicated options: {e}")
+        raise
+    except parser.Error as e:
+        logging.critical(f'An error occurred while reading the configuration file {configfile}, exiting now: {e}')
+        raise
+
+    # Check if values are valid
+    if any(i in script_id for i in "/$\00"):
+        logging.error("script_id contains chars that are not valid")
+    if log_level_str.upper() not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        logging.error("Log level is invalid")
+        sys.exit(ValueError)
+    return configuration
+
+
 def main(configfile='/etc/dcache/container.conf'):
     # global variables
     global running
@@ -72,54 +126,14 @@ def main(configfile='/etc/dcache/container.conf'):
 
     while running:
         # Read configuration
-        configuration = parser.RawConfigParser(defaults={'scriptId': 'pack', 'mongoUri': 'mongodb://localhost/',
-                                                         'mongoDb': 'smallfiles', 'logLevel': 'ERROR'})
+        configuration = get_config(configfile)
 
-        # Configure parameters from configuration file
-        try:
-            if not os.path.isfile(configfile):
-                raise FileNotFoundError
-            configuration.read(configfile)
-            script_id = configuration.get('DEFAULT', 'script_id')
-            log_level_str = configuration.get('DEFAULT', 'log_level')
-            mongo_uri = configuration.get('DEFAULT', 'mongo_url')
-            mongo_db = configuration.get('DEFAULT', 'mongo_db')
-            webdav_door = configuration.get('DEFAULT', 'webdav_door')
-            macaroon = configuration.get('DEFAULT', 'macaroon')
-        except FileNotFoundError as e:
-            logger.critical(f'Configuration file "{configfile}" not found. Exiting now.')
-            raise e
-        except parser.NoSectionError as e:
-            logger.critical(
-                f'Section [DEFAULT] was not found in "{configfile}". This section is mandatory, exiting now.')
-            raise e
-        except parser.NoOptionError as e:
-            logger.critical(f'An option is missing in section [DEFAULT] of file "{configfile}", exiting now: {e}')
-            raise e
-        except parser.MissingSectionHeaderError as e:
-            logger.critical(f'The file "{configfile}" doesn\'t contain section headers. Exiting now')
-            raise e
-        except parser.ParsingError as e:
-            logger.critical(
-                f'There was an error parsing while parsing the configuration "{configfile}", exiting now: {e}')
-            raise e
-        except parser.Error as e:
-            logger.critical(f'An error occurred while reading the configuration file {configfile}, exiting now: {e}')
-            raise e
-
-        # Check if values are valid
-        if any(i in script_id for i in "/$\00"):
-            logger.error("script_id contains chars that are not valid")
-        if log_level_str.upper() not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
-            logger.error("Log level is invalid")
-            sys.exit(ValueError)
-
-        logger.debug(f"Script ID: {script_id}")
-        logger.debug(f"Log level: {log_level_str}")
-        logger.debug(f"Mongo URI: {mongo_uri}")
-        logger.debug(f"Mongo database: {mongo_db}")
-        logger.debug(f"Webdav Door: {webdav_door}")
-        logger.debug(f"Macaroon: {macaroon}")
+        script_id = configuration.get('DEFAULT', 'script_id')
+        log_level_str = configuration.get('DEFAULT', 'log_level')
+        mongo_uri = configuration.get('DEFAULT', 'mongo_url')
+        mongo_db = configuration.get('DEFAULT', 'mongo_db')
+        webdav_door = configuration.get('DEFAULT', 'webdav_door')
+        macaroon = configuration.get('DEFAULT', 'macaroon')
 
         log_level = getattr(logging, log_level_str.upper(), None)
         logger.setLevel(log_level)
@@ -132,6 +146,13 @@ def main(configfile='/etc/dcache/container.conf'):
         formatter = logging.Formatter('%(asctime)s %(name)-10s %(levelname)-8s %(message)s')
         log_handler.setFormatter(formatter)
         logger.addHandler(log_handler)
+
+        logger.debug(f"Script ID: {script_id}")
+        logger.debug(f"Log level: {log_level_str}")
+        logger.debug(f"Mongo URI: {mongo_uri}")
+        logger.debug(f"Mongo database: {mongo_db}")
+        logger.debug(f"Webdav Door: {webdav_door}")
+        logger.debug(f"Macaroon: {macaroon}")
 
         logger.info(f'Successfully read configuration from file {configfile}.')
 
