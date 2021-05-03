@@ -104,11 +104,15 @@ def get_config(configfile):
         raise
 
     # Check if values are valid
-    if any(i in script_id for i in "/$\00"):
+    if any(i in script_id for i in ["/", "$", "\\00"]):
         logging.error("script_id contains chars that are not valid")
+        raise ValueError("script_id contains invalid chars like /, $ or \\00")
     if log_level_str.upper() not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
         logging.error("Log level is invalid")
-        sys.exit(ValueError)
+        raise ValueError(f"Invalid log_level {log_level_str}. Must be one of (DEBUG|INFO|WARNING|ERROR|CRITICAL)")
+    if '.' in mongo_db:
+        logging.error("Invalid database name")
+        raise ValueError("mongo_db contains an invalid charakter like '.'")
     return configuration
 
 
@@ -224,19 +228,36 @@ def main(configfile='/etc/dcache/container.conf'):
                                 local_checksum = checksum_calculation[checksum_type.lower()](archive['path'])
                                 if local_checksum == remote_checksum:
                                     logger.info(f"File already exists on dCache, code {response.status_code}")
-                                    break
                                 else:
                                     logger.error(f"File already exists on dCache, but with a different checksum!! "
                                                  f"Local checksum: {local_checksum} ; Remote checksum: "
                                                  f"{remote_checksum} ; Type: {checksum_type}")
-                        try:
-                            response = requests.put(url, data=open(archive['path'], 'rb'), verify=True, headers=headers)
-                        except Exception as e:
-                            logger.error(f"An exception occured while uploading zip-file to dCache. Will retry in a "
-                                         f"few seconds: {e}")
-                            retry_counter += 1
-                            time.sleep(10)
-                            continue
+                                    # Create MongoDB Entry for Archive
+                                    db.archive_failure.insert_one({"pnfsid": response.headers.get("ETag").split('_')[0]
+                                                                  .replace('"', ''),
+                                                                   "location": archive['path'],
+                                                                   "files": archive_pnfsidlist})
+                                    # Reset files
+                                    for pnfsid in archive_pnfsidlist:
+                                        db_file = db.files.find_one({"pnfsid": pnfsid})
+                                        db_file['state'] = "new"
+                                        db.files.replace_one({"pnfsid": pnfsid}, db_file)
+                                    # Delete local file
+                                    try:
+                                        os.remove(archive['path'])
+                                    except FileNotFoundError as e:
+                                        logger.warning(
+                                            f"Archive {archive['path']} could not be removed as the file was not found.")
+                                    logger.debug(f"Deleted local archive {archive['path']}")
+                            else:
+                                try:
+                                    response = requests.put(url, data=open(archive['path'], 'rb'), verify=True, headers=headers)
+                                except (ConnectionError, TimeoutError, requests.exceptions.RequestException) as e:
+                                    logger.error(f"An exception occured while uploading zip-file to dCache. Will retry in a "
+                                                 f"few seconds: {e}")
+                                    retry_counter += 1
+                                    time.sleep(10)
+                                    continue
                         response_status_code = response.status_code
                         logger.debug(f"Uploading zip-file finished with status code {response_status_code}")
                         if response_status_code not in (200, 201):
