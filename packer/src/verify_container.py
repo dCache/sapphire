@@ -146,7 +146,7 @@ def main(configfile='/etc/dcache/container.conf'):
             log_handler.close()
             logger.removeHandler(log_handler)
 
-        log_handler = logging.handlers.WatchedFileHandler(f'/var/log/dcache/writebfids-{script_id}.log')
+        log_handler = logging.handlers.WatchedFileHandler(f'/var/log/dcache/verify_container-{script_id}.log')
         formatter = logging.Formatter('%(asctime)s %(name)-10s %(levelname)-8s %(message)s')
         log_handler.setFormatter(formatter)
         logger.addHandler(log_handler)
@@ -382,7 +382,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, sigint_handler)
     sys.excepthook = uncaught_handler
     if not os.getuid() == 0:
-        print("writebfids.py must run as root!")
+        print("verify_container.py must run as root!")
         sys.exit(2)
 
     if len(sys.argv) == 1:
@@ -390,5 +390,5 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         main(sys.argv[1])
     else:
-        print("Usage: writebfids.py <configfile>")
+        print("Usage: verify_container.py <configfile>")
         sys.exit(2)

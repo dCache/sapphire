@@ -51,10 +51,10 @@ class UserInterruptException(Exception):
 class GroupPackager:
     def __init__(self, path, file_pattern, store_group, store_name, archive_size,
                  min_age, max_age, verify, archive_path):
-        self.logger = logging.getLogger(name=f"GroupPackager[{self.path_pattern.pattern}]")
         self.path = path
         try:
             self.path_pattern = re.compile(os.path.join(path, file_pattern))
+            self.logger = logging.getLogger(name=f"GroupPackager[{self.path_pattern.pattern}]")
             self.store_group = re.compile(store_group)
             self.store_name = re.compile(store_name)
         except re.error as e:
@@ -323,7 +323,7 @@ def get_config(configfile):
         defaults={'script_id': 'pack', 'mongo_url': 'mongodb://localhost:27017/', 'mongo_db': 'smallfiles',
                   'loop_delay': 5, 'log_level': 'ERROR', 'working_dir': '/sapphire'})
     try:
-        if not os.path.isdir(configfile):
+        if not os.path.isfile(configfile):
             raise FileNotFoundError
         configuration.read(configfile)
 
@@ -384,7 +384,7 @@ def get_config(configfile):
         logging.critical(f"Value of loop delay is invalid: {e}")
         raise
 
-    if any(i in script_id for i in "/$\\00"):
+    if any(i in script_id for i in ["/", "$", "\\00"]):
         logging.error("script_id contains chars that are not valid")
         raise ValueError("script_id contains invalid chars like /, $ or \\00")
 
