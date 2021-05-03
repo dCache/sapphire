@@ -79,7 +79,7 @@ class GroupPackager:
         global mount_point
 
         now = int(datetime.now().strftime("%s"))
-        ctime_threshold = now - self.min_age * 60
+        ctime_threshold = now - int(self.min_age) * 60
         self.logger.debug(f"Looking for files matching {{ "
                           f"state: new, "
                           f"path: {self.path_pattern.pattern}, "
@@ -95,7 +95,7 @@ class GroupPackager:
             cursor.sort('ctime', ASCENDING)
             sumsize = 0
             old_files_mode = False
-            ctime_oldfile_threshold = now - self.max_age * 60
+            ctime_oldfile_threshold = now - int(self.max_age) * 60
             filecount = mongo_db.files.count_documents({'state': 'new',
                                                         'path': self.path_pattern,
                                                         'group': self.store_group,
