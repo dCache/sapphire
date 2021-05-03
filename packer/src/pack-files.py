@@ -7,6 +7,7 @@ import signal
 import sys
 import traceback
 import uuid
+import zipfile
 from datetime import datetime
 import time
 
@@ -23,6 +24,7 @@ mongo_client = ""
 working_directory = ""
 data_root = ""
 mount_point = ""
+loop_delay = 0
 
 
 def sigint_handler(signum, frame):
@@ -49,16 +51,20 @@ class UserInterruptException(Exception):
 class GroupPackager:
     def __init__(self, path, file_pattern, store_group, store_name, archive_size,
                  min_age, max_age, verify, archive_path):
-        self.path = path
-        self.path_pattern = re.compile(os.path.join(path, file_pattern))
-        self.store_group = re.compile(store_group)
-        self.store_name = re.compile(store_name)
-        self.archive_size = int(archive_size.replace('G', '000000000').replace('M', '000000').replace('K', '000'))
-        self.archive_path = archive_path
-        self.min_age = int(min_age)
-        self.max_age = int(max_age)
-        self.verify = verify
         self.logger = logging.getLogger(name=f"GroupPackager[{self.path_pattern.pattern}]")
+        self.path = path
+        try:
+            self.path_pattern = re.compile(os.path.join(path, file_pattern))
+            self.store_group = re.compile(store_group)
+            self.store_name = re.compile(store_name)
+        except re.error as e:
+            self.logger.critical(f"Error compiling regex while creating GroupPackager: {e}")
+            raise
+        self.archive_size = archive_size
+        self.archive_path = archive_path
+        self.min_age = min_age
+        self.max_age = max_age
+        self.verify = verify
 
     def write_status(self, arcfile, current_size, next_file):
         global script_id
@@ -85,7 +91,7 @@ class GroupPackager:
                                   'group': self.store_group,
                                   'store': self.store_name,
                                   'ctime': {'$lt': ctime_threshold}},
-                                 no_cursor_timeout=False).batch_size(512) as cursor:
+                                 no_cursor_timeout=True, allow_disk_use=True).batch_size(512) as cursor:
             cursor.sort('ctime', ASCENDING)
             sumsize = 0
             old_files_mode = False
@@ -173,7 +179,7 @@ class GroupPackager:
                                           f"See below for details.")
                         container.close()
                         os.remove(container.filepath)
-                        raise e
+                        raise
                     sumsize -= f['size']
                     filecount -= 1
 
@@ -205,11 +211,19 @@ class GroupPackager:
             except errors.OperationFailure as e:
                 self.logger.error(f"Operation Exception in database communication while creating container "
                                   f"{container.filepath}. Please Check!\n{e}")
-                os.remove(container.filepath)
+                try:
+                    os.remove(container.filepath)
+                except FileNotFoundError as e:
+                    logging.info(f"File was already removed: {e}")
             except errors.ConnectionFailure as e:
                 self.logger.error(f"Connection Exception in database communication. Removing incomplete container "
                                   f"{container.filepath}.\n{e}")
-                os.remove(container.filepath)
+                try:
+                    os.remove(container.filepath)
+                except FileNotFoundError as e:
+                    logging.info(f"File was already removed: {e}")
+            except zipfile.BadZipFile as e:
+                return
 
 
 class Container:
@@ -221,9 +235,13 @@ class Container:
         self.size = 0
         self.filecount = 0
         self.verify = verify
-        self.zip_file = ZipFile(self.filepath, 'w')
-        self.archive_path = archive_path
         self.logger = logging.getLogger(name=f"Container[{self.filename}]")
+        try:
+            self.zip_file = ZipFile(self.filepath, 'w', allowZip64=True)
+        except zipfile.BadZipFile as e:
+            self.logger.error(f"Could not create local file for Container {self.filepath}: {e}")
+            raise
+        self.archive_path = archive_path
 
     def add(self, pnfsid, filepath, localpath, size):
         self.content_dict[pnfsid] = {"filepath": filepath, "localpath": localpath}
@@ -294,6 +312,95 @@ class Container:
             os.rmdir(self.temp_dir)
 
 
+def get_config(configfile):
+    global mongo_url
+    global working_directory
+    global script_id
+    global mount_point
+    global data_root
+    global loop_delay
+    configuration = configparser.RawConfigParser(
+        defaults={'script_id': 'pack', 'mongo_url': 'mongodb://localhost:27017/', 'mongo_db': 'smallfiles',
+                  'loop_delay': 5, 'log_level': 'ERROR', 'working_dir': '/sapphire'})
+    try:
+        if not os.path.isdir(configfile):
+            raise FileNotFoundError
+        configuration.read(configfile)
+
+        script_id = configuration.get('DEFAULT', 'script_id')
+        log_level_str = configuration.get('DEFAULT', 'log_level')
+        mongo_url = configuration.get('DEFAULT', 'mongo_url')
+        mongo_db_name = configuration.get('DEFAULT', 'mongo_db')
+        working_directory = configuration.get('DEFAULT', 'working_dir')
+        loop_delay = configuration.get('DEFAULT', 'loop_delay')
+        mount_point = configuration.get("DEFAULT", "mount_point")
+        data_root = configuration.get("DEFAULT", "data_root")
+    except FileNotFoundError as e:
+        logging.critical(f'Configuration file "{configfile}" not found.')
+        raise
+    except configparser.NoSectionError as e:
+        logging.critical(
+            f'Section [DEFAULT] was not found in "{configfile}". This section is mandatory.')
+        raise
+    except configparser.NoOptionError as e:
+        logging.critical(f'An option is missing in section [DEFAULT] of file "{configfile}", exiting now: {e}')
+        raise
+    except KeyError as e:
+        logging.critical(f"There's something wrong with a key, {e}")
+        raise
+    except configparser.MissingSectionHeaderError as e:
+        logging.critical(f'The file "{configfile}" doesn\'t contain section headers. Exiting now')
+        raise
+    except configparser.ParsingError as e:
+        logging.critical(
+            f'There was an error parsing while parsing the configuration "{configfile}", exiting now: {e}')
+        raise
+    except configparser.DuplicateSectionError as e:
+        logging.critical(f"There are duplicated sections: {e}")
+        raise
+    except configparser.DuplicateOptionError as e:
+        logging.critical(f"There are duplicated options: {e}")
+        raise
+    except configparser.Error as e:
+        logging.critical(f'An error occurred while reading the configuration file {configfile}, exiting now: {e}')
+        raise
+
+    if log_level_str.upper() not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        logging.error(f"Log level {log_level_str} is invalid")
+        raise ValueError(f"Invalid log_level {log_level_str}. Must be one of (DEBUG|INFO|WARNING|ERROR|CRITICAL)")
+
+    if not os.path.isdir(working_directory):
+        logging.info(f"Working directory {working_directory} doesn't exists and will be created now.")
+        try:
+            os.mkdir(working_directory)
+        except OSError as e:
+            logging.critical(f"Working directory {working_directory} could not be created: {e}")
+            raise
+        logging.info(f"Working directory was created")
+
+    try:
+        loop_delay = int(loop_delay)
+    except ValueError as e:
+        logging.critical(f"Value of loop delay is invalid: {e}")
+        raise
+
+    if any(i in script_id for i in "/$\\00"):
+        logging.error("script_id contains chars that are not valid")
+        raise ValueError("script_id contains invalid chars like /, $ or \\00")
+
+    if '.' in mongo_db_name:
+        logging.error("Invalid database name")
+        raise ValueError("mongo_db contains an invalid charakter like '.'")
+
+    try:
+        loop_delay = int(loop_delay)
+    except ValueError as e:
+        logging.critical("The value of loop_delay could not be converted to int")
+        raise
+
+    return configuration
+
+
 def main(configfile="/etc/dcache/container.conf"):
     global running
     global mongo_url
@@ -303,63 +410,54 @@ def main(configfile="/etc/dcache/container.conf"):
     global script_id
     global mount_point
     global data_root
+    global loop_delay
 
     logger = logging.getLogger()
     log_handler = None
 
     while running:
+        configuration = get_config(configfile)
+
+        log_level_str = configuration.get('DEFAULT', 'log_level')
+        mongo_db_name = configuration.get('DEFAULT', 'mongo_db')
+
+        log_level = getattr(logging, log_level_str.upper(), None)
+        logger.setLevel(log_level)
+
+        if log_handler is not None:
+            log_handler.close()
+            logger.removeHandler(log_handler)
+
+        log_handler = logging.handlers.WatchedFileHandler(f'/var/log/dcache/pack-files-{script_id}.log')
+        formatter = logging.Formatter('%(asctime)s %(name)-10s %(levelname)-8s %(message)s')
+        log_handler.setFormatter(formatter)
+        logger.addHandler(log_handler)
+
+        logger.info(f"Successfully read configuration from file {configfile}.")
+
+        logger.debug(f"script_id: {script_id}")
+        logger.debug(f"mongo_url: {mongo_url}")
+        logger.debug(f"mongo_db: {mongo_db_name}")
+        logger.debug(f"working_dir: {working_directory}")
+        logger.debug(f"log_level: {log_level}")
+        logger.debug(f"loop_delay: {loop_delay}")
+
         try:
-            configuration = configparser.RawConfigParser(
-                defaults={'script_id': 'pack', 'mongo_url': 'mongodb://localhost:27017/', 'mongo_db': 'smallfiles',
-                          'loop_delay': 5, 'log_level': 'ERROR', 'working_dir': '/sapphire'})
-            configuration.read(configfile)
+            mongo_client = MongoClient(mongo_url)
+            mongo_db = mongo_client[mongo_db_name]
+            logger.info("Established connection to MongoDB")
 
-            script_id = configuration.get('DEFAULT', 'script_id')
+            logger.info("Sanitizing database")
+            mongo_db.files.update_many({'lock': script_id}, {'$set': {'state': 'new'}, '$unset': {'lock': ""}})
 
-            log_level_str = configuration.get('DEFAULT', 'log_level')
-            log_level = getattr(logging, log_level_str.upper(), None)
-            logger.setLevel(log_level)
+            logger.info("Creating GroupPackager")
 
-            if log_handler is not None:
-                log_handler.close()
-                logger.removeHandler(log_handler)
+            groups = configuration.sections()
+            group_packager = []
 
-            log_handler = logging.handlers.WatchedFileHandler(f'/var/log/dcache/pack-files-{script_id}.log')
-            formatter = logging.Formatter('%(asctime)s %(name)-10s %(levelname)-8s %(message)s')
-            log_handler.setFormatter(formatter)
-            logger.addHandler(log_handler)
-
-            mongo_url = configuration.get('DEFAULT', 'mongo_url')
-            mongo_db_name = configuration.get('DEFAULT', 'mongo_db')
-            working_directory = configuration.get('DEFAULT', 'working_dir')
-            loop_delay = configuration.get('DEFAULT', 'loop_delay')
-            mount_point = configuration.get("DEFAULT", "mount_point")
-            data_root = configuration.get("DEFAULT", "data_root")
-
-            logger.info(f"Successfully read configuration from file {configfile}.")
-
-            logger.debug(f"script_id: {script_id}")
-            logger.debug(f"mongo_url: {mongo_url}")
-            logger.debug(f"mongo_db: {mongo_db_name}")
-            logger.debug(f"working_dir: {working_directory}")
-            logger.debug(f"log_level: {log_level}")
-            logger.debug(f"loop_delay: {loop_delay}")
-
-            try:
-                mongo_client = MongoClient(mongo_url)
-                mongo_db = mongo_client[mongo_db_name]
-                logger.info("Established connection to MongoDB")
-
-                logger.info("Sanitizing database")
-                mongo_db.files.update_many({'lock': script_id}, {'$set': {'state': 'new'}, '$unset': {'lock': ""}})
-
-                logger.info("Creating GroupPackager")
-
-                groups = configuration.sections()
-                group_packager = []
-
-                for group in groups:
-                    logger.debug(f"Group: {group}")
+            for group in groups:
+                logger.debug(f"Group: {group}")
+                try:
                     file_pattern = configuration.get(group, "file_expression")
                     store_group = configuration.get(group, "s_group")
                     store_name = configuration.get(group, "store_name")
@@ -369,38 +467,88 @@ def main(configfile="/etc/dcache/container.conf"):
                     verify = configuration.get(group, "verify")
                     path_regex = re.compile(configuration.get(group, "path_expression"))
                     archive_path = configuration.get(group, "archive_path")
+                except configparser.NoOptionError as e:
+                    logging.critical(
+                        f'An option is missing in section {group} of file "{configfile}", exiting now: {e}')
+                    continue
+                except KeyError as e:
+                    logging.critical(f"There's something wrong with a key, {e}")
+                    continue
+                except configparser.ParsingError as e:
+                    logging.critical(
+                        f'There was an error parsing while parsing the configuration "{configfile}", section {group}, '
+                        f'exiting now: {e}')
+                    continue
+                # except parser.DuplicateSectionError as e:
+                #     logging.critical(f"There are duplicated sections: {e}")
+                #     raise
+                except configparser.DuplicateOptionError as e:
+                    logging.critical(f"There are duplicated options: {e}")
+                    continue
+                except configparser.Error as e:
+                    logging.critical(
+                        f'An error occurred while reading the configuration file {configfile}, section {group}, '
+                        f'exiting now: {e}')
+                    continue
+                except re.error as e:
+                    logging.critical(f"An error occured with path_expression in group {group}: {e}")
+                    continue
 
-                    logger.debug(f"file_pattern: {file_pattern}")
-                    logger.debug(f"store_group: {store_group}")
-                    logger.debug(f"store_name: {store_name}")
-                    logger.debug(f"archive_size: {archive_size}")
-                    logger.debug(f"min_age: {min_age}")
-                    logger.debug(f"max_age: {max_age}")
-                    logger.debug(f"verify: {verify}")
-                    logger.debug(f"path_expression: {path_regex}")
-                    logger.debug(f"archive_path: {archive_path}")
+                try:
+                    archive_size = int(archive_size.replace('G', '000000000').replace('M', '000000')
+                                       .replace('K', '000'))
+                except ValueError as e:
+                    logger.critical(f"Value of archive size in section {group} is invalid: {e}")
+                    continue
+                if not min_age.isnumeric():
+                    logger.critical(f"The minimum age in section {group} is invalid as it's not numerical!")
+                    continue
 
-                    paths = mongo_db.files.find({"parent": path_regex}).distinct("parent")
-                    pathset = set()
-                    for path in paths:
+                if not max_age.isnumeric():
+                    logger.critical(f"The maximum age in section {group} is invalid as it's not numerical!")
+                    continue
+
+                logger.debug(f"file_pattern: {file_pattern}")
+                logger.debug(f"store_group: {store_group}")
+                logger.debug(f"store_name: {store_name}")
+                logger.debug(f"archive_size: {archive_size}")
+                logger.debug(f"min_age: {min_age}")
+                logger.debug(f"max_age: {max_age}")
+                logger.debug(f"verify: {verify}")
+                logger.debug(f"path_expression: {path_regex}")
+                logger.debug(f"archive_path: {archive_path}")
+
+                paths = mongo_db.files.find({"parent": path_regex}).distinct("parent")
+                pathset = set()
+                for path in paths:
+                    try:
                         pathmatch = re.match(f"(?P<sfpath>{path_regex.pattern})", path).group("sfpath")
-                        pathset.add(pathmatch)
+                    except re.error as e:
+                        logging.critical(f"An error occured while matching path {path}: {e}")
+                        continue
+                    pathset.add(pathmatch)
 
-                    for path in pathset:
+                for path in pathset:
+                    try:
                         packager = GroupPackager(path, file_pattern, store_group, store_name, archive_size,
                                                  min_age, max_age, verify, archive_path)
-                        group_packager.append(packager)
-                        logger.info(f"Added packager {group} for paths matching {packager.path}")
+                    except re.error as e:
+                        logging.critical(f"Could not create GroupPackager for path {path}: {e}")
+                        continue
+                    group_packager.append(packager)
+                    logger.info(f"Added packager {group} for paths matching {packager.path}")
 
-                    for packager in group_packager:
-                        packager.run()
+                for packager in group_packager:
+                    packager.run()
 
-            except Exception as e:
-                logger.error(f"Exception occured: {type(e)} -- {e}\n\n{traceback.print_exc()}")
+        except (errors.ConnectionFailure, errors.InvalidURI, errors.InvalidName, errors.ServerSelectionTimeoutError) \
+                as e:
+            logger.error(f"Connection to {mongo_url}, database {mongo_db}, failed. Will retry in next iteration "
+                         f"again. {e}")
+            time.sleep(60)
+            continue
 
-        except Exception as e:
-            logger.error(f"Exception occured: {type(e)} -- {e}\n\n{traceback.print_exc()}")
-        time.sleep(int(loop_delay))
+        time.sleep(loop_delay)
 
 
 if __name__ == '__main__':
