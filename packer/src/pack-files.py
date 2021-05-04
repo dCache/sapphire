@@ -214,14 +214,14 @@ class GroupPackager:
                 try:
                     os.remove(container.filepath)
                 except FileNotFoundError as e:
-                    logging.info(f"File was already removed: {e}")
+                    self.logger.info(f"File was already removed: {e}")
             except errors.ConnectionFailure as e:
                 self.logger.error(f"Connection Exception in database communication. Removing incomplete container "
                                   f"{container.filepath}.\n{e}")
                 try:
                     os.remove(container.filepath)
                 except FileNotFoundError as e:
-                    logging.info(f"File was already removed: {e}")
+                    self.logger.info(f"File was already removed: {e}")
             except zipfile.BadZipFile as e:
                 return
 
@@ -257,7 +257,7 @@ class Container:
             try:
                 shutils.copy(localpath, os.path.join(self.temp_dir, pnfsid))
             except Exception as e:
-                logging.error(f"Exception while copying file: {type(e)}\n\n{traceback.print_exc()}")
+                self.logger.error(f"Exception while copying file: {type(e)}\n\n{traceback.print_exc()}")
 
     def verify_archive(self):
         if self.verify == 'filelist':
@@ -373,6 +373,7 @@ def get_config(configfile):
         logging.info(f"Working directory {working_directory} doesn't exists and will be created now.")
         try:
             os.mkdir(working_directory)
+            os.mkdir(f"{working_directory}/container")
         except OSError as e:
             logging.critical(f"Working directory {working_directory} could not be created: {e}")
             raise
@@ -468,14 +469,14 @@ def main(configfile="/etc/dcache/container.conf"):
                     path_regex = re.compile(configuration.get(group, "path_expression"))
                     archive_path = configuration.get(group, "archive_path")
                 except configparser.NoOptionError as e:
-                    logging.critical(
+                    logger.critical(
                         f'An option is missing in section {group} of file "{configfile}", exiting now: {e}')
                     continue
                 except KeyError as e:
-                    logging.critical(f"There's something wrong with a key, {e}")
+                    logger.critical(f"There's something wrong with a key, {e}")
                     continue
                 except configparser.ParsingError as e:
-                    logging.critical(
+                    logger.critical(
                         f'There was an error parsing while parsing the configuration "{configfile}", section {group}, '
                         f'exiting now: {e}')
                     continue
@@ -483,15 +484,15 @@ def main(configfile="/etc/dcache/container.conf"):
                 #     logging.critical(f"There are duplicated sections: {e}")
                 #     raise
                 except configparser.DuplicateOptionError as e:
-                    logging.critical(f"There are duplicated options: {e}")
+                    logger.critical(f"There are duplicated options: {e}")
                     continue
                 except configparser.Error as e:
-                    logging.critical(
+                    logger.critical(
                         f'An error occurred while reading the configuration file {configfile}, section {group}, '
                         f'exiting now: {e}')
                     continue
                 except re.error as e:
-                    logging.critical(f"An error occured with path_expression in group {group}: {e}")
+                    logger.critical(f"An error occured with path_expression in group {group}: {e}")
                     continue
 
                 try:
@@ -524,7 +525,7 @@ def main(configfile="/etc/dcache/container.conf"):
                     try:
                         pathmatch = re.match(f"(?P<sfpath>{path_regex.pattern})", path).group("sfpath")
                     except re.error as e:
-                        logging.critical(f"An error occured while matching path {path}: {e}")
+                        logger.critical(f"An error occured while matching path {path}: {e}")
                         continue
                     pathset.add(pathmatch)
 
@@ -533,7 +534,7 @@ def main(configfile="/etc/dcache/container.conf"):
                         packager = GroupPackager(path, file_pattern, store_group, store_name, archive_size,
                                                  min_age, max_age, verify, archive_path)
                     except re.error as e:
-                        logging.critical(f"Could not create GroupPackager for path {path}: {e}")
+                        logger.critical(f"Could not create GroupPackager for path {path}: {e}")
                         continue
                     group_packager.append(packager)
                     logger.info(f"Added packager {group} for paths matching {packager.path}")
