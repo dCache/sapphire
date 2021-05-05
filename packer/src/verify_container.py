@@ -341,6 +341,9 @@ def main(configfile='/etc/dcache/container.conf'):
                                  f"Checksum type: {checksum_type}")
                     if remote_checksum == local_checksum:
                         for file_pnfsid in archive_pnfsidlist:
+                            if file_pnfsid in sym_diff_pnfsidlist:
+                                logger.debug(f"File {file_pnfsid} is in list with problems, continuing.")
+                                continue
                             file_entry = db.files.find_one({'pnfsid': file_pnfsid})
                             if file_entry is None:
                                 continue
