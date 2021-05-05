@@ -165,6 +165,7 @@ def main(configfile='/etc/dcache/container.conf'):
             client = MongoClient(mongo_uri)
             db = client[mongo_db]
             with db.archives.find() as db_archives:
+                skip = False
                 logger.info(f"Found {db.archives.count_documents({})} new archives")
                 for archive in db_archives:
                     if not running:
@@ -240,15 +241,21 @@ def main(configfile='/etc/dcache/container.conf'):
                                     # Reset files
                                     for pnfsid in archive_pnfsidlist:
                                         db_file = db.files.find_one({"pnfsid": pnfsid})
-                                        db_file['state'] = "new"
-                                        db.files.replace_one({"pnfsid": pnfsid}, db_file)
+                                        if db_file is None:
+                                            logger.info(f"File {pnfsid} from archive {archive['path']} is no longer in "
+                                                        f"MongoDB. Maybe it was removed from Java-Driver")
+                                        else:
+                                            db_file['state'] = "new"
+                                            db.files.replace_one({"pnfsid": pnfsid}, db_file)
                                     # Delete local file
+                                    db.archives.delete_one({"path": archive['path']})
                                     try:
                                         os.remove(archive['path'])
                                     except FileNotFoundError as e:
                                         logger.warning(
                                             f"Archive {archive['path']} could not be removed as the file was not found.")
                                     logger.debug(f"Deleted local archive {archive['path']}")
+                                    skip = True
                             else:
                                 try:
                                     response = requests.put(url, data=open(archive['path'], 'rb'), verify=True, headers=headers)
@@ -259,12 +266,16 @@ def main(configfile='/etc/dcache/container.conf'):
                                     time.sleep(10)
                                     continue
                         response_status_code = response.status_code
-                        logger.debug(f"Uploading zip-file finished with status code {response_status_code}")
+                        if not skip:
+                            logger.debug(f"Uploading zip-file finished with status code {response_status_code}")
                         if response_status_code not in (200, 201):
                             logger.info(f"Uploading file to dCache failed as the returned status code, "
                                         f"{response_status_code}, is not 200 or 201. Retrying in a few seconds.")
                             retry_counter += 1
                             time.sleep(10)
+                    if skip:
+                        logger.debug(f"Skipping archive")
+                        continue
                     if retry_counter == 4:
                         logger.critical(f"Zip-file could not be uploaded to dCache, even after retrying "
                                         f"{retry_counter - 1} time(s). Please check your dCache! Exiting script now...")
