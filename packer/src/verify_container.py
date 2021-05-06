@@ -41,9 +41,12 @@ def _md5(filepath):
     return base64.b64encode(md5_value.digest()).decode()
 
 
-def _adler32(filepath):  # Does this work for large files?
+def _adler32(filepath):
+    blocksize = 256*1024*1024
+    adler32_value = 1
     with open(filepath, "rb") as file:
-        adler32_value = adler32(file.read())
+        while data := file.read(blocksize):
+            adler32_value = adler32(data, adler32_value)
     checksum = hex(adler32_value)[2:]
     while len(checksum) < 8:
         checksum = f"0{checksum}"
