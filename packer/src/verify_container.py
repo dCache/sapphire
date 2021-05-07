@@ -119,6 +119,12 @@ def get_config(configfile):
     return configuration
 
 
+def reset_pnfsid(pnfsid, db):
+    db_file = db.files.find_one({"pnfsid": pnfsid})
+    db_file['state'] = "new"
+    db.files.replace_one({"pnfsid": pnfsid}, db_file)
+
+
 def main(configfile='/etc/dcache/container.conf'):
     # global variables
     global running
@@ -189,9 +195,10 @@ def main(configfile='/etc/dcache/container.conf'):
                             f"in this archive, are now reset to be packed again.")
                         for archived in db.files.find({"state": f"archived: {archive['path']}"}):
                             pnfsid = archived['pnfsid']
-                            file_result = db.files.find_one({"pnfsid": pnfsid})
-                            file_result['state'] = "new"
-                            db.files.replace_one({"pnfsid": pnfsid}, file_result)
+                            reset_pnfsid(pnfsid, db)
+                            # file_result = db.files.find_one({"pnfsid": pnfsid})
+                            # file_result['state'] = "new"
+                            # db.files.replace_one({"pnfsid": pnfsid}, file_result)
                             logger.debug(f"Resetted file with PNFSID {pnfsid}")
                         db.archives.delete_one({"path": archive['path']})
                         continue
@@ -213,9 +220,10 @@ def main(configfile='/etc/dcache/container.conf'):
                         elif pnfsid in db_pnfsidlist:
                             logger.warning(f"File {pnfsid} is listed in MongoDB to be in archive {archive['path']}, "
                                            f"but isn't there. Resetting file for packing into new archive")
-                            db_file = db.files.find_one({"pnfsid": pnfsid})
-                            db_file['state'] = "new"
-                            db.files.replace_one({"pnfsid": pnfsid}, db_file)
+                            reset_pnfsid(pnfsid, db)
+                            # db_file = db.files.find_one({"pnfsid": pnfsid})
+                            # db_file['state'] = "new"
+                            # db.files.replace_one({"pnfsid": pnfsid}, db_file)
 
                     # Upload zip-file to dCache
                     headers = {"Content-type": "application/octet-stream",
@@ -248,8 +256,9 @@ def main(configfile='/etc/dcache/container.conf'):
                                             logger.info(f"File {pnfsid} from archive {archive['path']} is no longer in "
                                                         f"MongoDB. Maybe it was removed from Java-Driver")
                                         else:
-                                            db_file['state'] = "new"
-                                            db.files.replace_one({"pnfsid": pnfsid}, db_file)
+                                            reset_pnfsid(pnfsid, db)
+                                            # db_file['state'] = "new"
+                                            # db.files.replace_one({"pnfsid": pnfsid}, db_file)
                                     # Delete local file
                                     db.archives.delete_one({"path": archive['path']})
                                     try:
@@ -324,9 +333,10 @@ def main(configfile='/etc/dcache/container.conf'):
                                      f"uploaded file and resetting files that should be in this archive to get packed "
                                      f"again.")
                         for pnfsid in archive_pnfsidlist:
-                            file_result = db.files.find_one({"pnfsid": pnfsid})
-                            file_result['state'] = "new"
-                            db.files.replace_one({"pnfsid": pnfsid}, file_result)
+                            reset_pnfsid(pnfsid, db)
+                            # file_result = db.files.find_one({"pnfsid": pnfsid})
+                            # file_result['state'] = "new"
+                            # db.files.replace_one({"pnfsid": pnfsid}, file_result)
                             logger.debug(f"Resetted file with PNFSID {pnfsid}")
                         headers = {"Authorization": f"Bearer {macaroon}"}
                         response = requests.delete(url, headers=headers, verify=True)
