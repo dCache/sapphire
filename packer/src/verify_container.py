@@ -45,8 +45,13 @@ def _adler32(filepath):
     blocksize = 256*1024*1024
     adler32_value = 1
     with open(filepath, "rb") as file:
-        while data := file.read(blocksize):
+        while True:
+            data = file.read(blocksize)
+            if not data:
+                break
             adler32_value = adler32(data, adler32_value)
+            if adler32_value < 0:
+                adler32_value += 2**32
     checksum = hex(adler32_value)[2:]
     while len(checksum) < 8:
         checksum = f"0{checksum}"
