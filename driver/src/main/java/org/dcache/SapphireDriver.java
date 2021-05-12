@@ -35,6 +35,7 @@ public class SapphireDriver implements NearlineStorage
     MongoCollection<Document> files;
     private final Queue<FlushRequest> flushRequestQueue;
     private final ScheduledExecutorService executorService;
+    private FileServer server;
 
     public SapphireDriver(String type, String name)
     {
@@ -173,6 +174,16 @@ public class SapphireDriver implements NearlineStorage
         TimeUnit periodUnit = TimeUnit.valueOf(properties.getOrDefault("period_unit", TimeUnit.MINUTES.name()));
 
         executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processFlush), schedulerPeriod, schedulerPeriod, periodUnit);
+
+        String[] whitelist = properties.getOrDefault("whitelist", "").split(",");
+        server = new FileServer(7070, whitelist);
+        try {
+            server.startServer();
+        } catch (Exception e) {
+            _log.error("Could not start Jetty server", e);
+            throw new RuntimeException(e);
+        }
+
     }
 
     /**
@@ -189,6 +200,12 @@ public class SapphireDriver implements NearlineStorage
             mongoClient.close();
         }
         executorService.shutdown();
+        try {
+            server.stopServer();
+        } catch (Exception e) {
+            _log.error("Error stopping Jetty server", e);
+            throw new RuntimeException(e);
+        }
     }
 
     private void processFlush() {
