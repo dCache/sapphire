@@ -13,6 +13,7 @@ import static com.mongodb.client.model.Filters.*;
 import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.mongodb.MongoSocketOpenException;
+import com.mongodb.MongoTimeoutException;
 import com.mongodb.client.*;
 import org.bson.Document;
 
@@ -214,8 +215,16 @@ public class SapphireDriver implements NearlineStorage
                 }
             }
 
-            FindIterable<Document> results = files.find(eq("pnfsid", pnfsid)).limit(1);
-            Document result = results.first();
+            Document result;
+            try {
+                FindIterable<Document> results = files.find(eq("pnfsid", pnfsid)).limit(1);
+                result = results.first();
+            } catch (MongoTimeoutException e) {
+                _log.warn("Connection to MongoDB timed out for FlushRequest of file " + pnfsid);
+                notYetReady.offer(request);
+                continue;
+            }
+
             if(result != null) {
                 _log.debug("Result: {}", result.toJson());
                 if (result.containsKey("archiveUrl")) {
