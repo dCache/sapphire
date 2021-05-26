@@ -402,6 +402,23 @@ def get_config(configfile):
     return configuration
 
 
+def add_missing_path():
+    global mongo_db
+    global mount_point
+    results = mongo_db.files.find({"path": ""})
+    for record in results:
+        pathof = get_dotfile(os.path.join(mount_point, record['pnfsid']), 'pathof')
+        record['path'] = pathof
+        mongo_db.files.replace_one({"pnfsid": record['pnfsid']}, record)
+
+
+def get_dotfile(filepath, tag):
+    with open(os.path.join(os.path.dirname(filepath), f".({tag})({os.path.basename(filepath)})"),
+              mode='r') as dotfile:
+        result = dotfile.readline().strip()
+    return result
+
+
 def main(configfile="/etc/dcache/container.conf"):
     global running
     global mongo_url
@@ -455,6 +472,8 @@ def main(configfile="/etc/dcache/container.conf"):
 
             groups = configuration.sections()
             group_packager = []
+
+            add_missing_path()
 
             for group in groups:
                 logger.debug(f"Group: {group}")
