@@ -405,7 +405,7 @@ def get_config(configfile):
 def add_missing_path():
     global mongo_db
     global mount_point
-    results = mongo_db.files.find({"path": ""})
+    results = mongo_db.files.find({"parent": ""})
     for record in results:
         pathof = get_dotfile(os.path.join(mount_point, record['pnfsid']), 'pathof')
         record['path'] = pathof
