@@ -409,6 +409,7 @@ def add_missing_path():
     for record in results:
         pathof = get_dotfile(os.path.join(mount_point, record['pnfsid']), 'pathof')
         record['path'] = pathof
+        record['parent'] = os.path.dirname(pathof)
         mongo_db.files.replace_one({"pnfsid": record['pnfsid']}, record)
 
 
