@@ -216,7 +216,8 @@ def main(configfile='/etc/dcache/container.conf'):
                     db_pnfsidlist = db.files.find({"state": f"archived: {archive['path']}"})
                     db_pnfsidlist = [f['pnfsid'] for f in db_pnfsidlist]
                     sym_diff_pnfsidlist = set(archive_pnfsidlist).symmetric_difference(set(db_pnfsidlist))
-                    logger.info(f"There were {len(sym_diff_pnfsidlist)} files with problems in archive")
+                    logger.info(f"Found {len(archive_pnfsidlist)} files in archive, {len(sym_diff_pnfsidlist)} of them "
+                                f"with problems.")
                     for pnfsid in sym_diff_pnfsidlist:
                         if pnfsid in archive_pnfsidlist:
                             logger.warning(f"File {pnfsid} is in archive {archive['path']}, but not in MongoDB! "
@@ -277,8 +278,8 @@ def main(configfile='/etc/dcache/container.conf'):
                                 try:
                                     response = requests.put(url, data=open(archive['path'], 'rb'), verify=True, headers=headers)
                                 except (ConnectionError, TimeoutError, requests.exceptions.RequestException) as e:
-                                    logger.error(f"An exception occured while uploading zip-file to dCache. Will retry in a "
-                                                 f"few seconds: {e}")
+                                    logger.error(f"An exception occured while uploading zip-file to dCache. Will retry "
+                                                 f"in a few seconds: {e}")
                                     retry_counter += 1
                                     time.sleep(10)
                                     continue
@@ -286,8 +287,8 @@ def main(configfile='/etc/dcache/container.conf'):
                         if not skip:
                             logger.debug(f"Uploading zip-file finished with status code {response_status_code}")
                         if response_status_code not in (200, 201):
-                            logger.info(f"Uploading file to dCache failed as the returned status code, "
-                                        f"{response_status_code}, is not 200 or 201. Retrying in a few seconds.")
+                            logger.warning(f"Uploading file to dCache failed as the returned status code, "
+                                           f"{response_status_code}, is not 200 or 201. Retrying in a few seconds.")
                             retry_counter += 1
                             time.sleep(10)
                     if skip:
@@ -315,7 +316,7 @@ def main(configfile='/etc/dcache/container.conf'):
                         response_status_code = response.status_code
                         logger.debug(f"Requesting checksum and pnfsid finished with status code {response_status_code}")
                         if response_status_code not in (200, 201):
-                            logger.info(f"Requesting checksum and pnfsid failed as the returned status code, "
+                            logger.warning(f"Requesting checksum and pnfsid failed as the returned status code, "
                                         f"{response_status_code}, is not 200 or 201. Retrying in a few seconds.")
                             retry_counter += 1
                             time.sleep(10)
@@ -407,6 +408,7 @@ def main(configfile='/etc/dcache/container.conf'):
             time.sleep(60)
             continue
 
+        logger.info(f"Sleeping for 60 seconds now")
         time.sleep(60)
 
 
