@@ -55,7 +55,8 @@ public class SapphireDriverTest {
                 "mongo_url", connectionString,
                 "database", "hsm",
                 "period", "1",
-                "period_unit", TimeUnit.SECONDS.name()
+                "period_unit", TimeUnit.SECONDS.name(),
+                "port", "12300-12500"
         );
 
         collection = mongoClient.getDatabase("hsm").getCollection("files");
