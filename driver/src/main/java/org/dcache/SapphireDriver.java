@@ -1,6 +1,7 @@
 package org.dcache;
 
 import java.io.*;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
@@ -176,14 +177,43 @@ public class SapphireDriver implements NearlineStorage
         executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processFlush), schedulerPeriod, schedulerPeriod, periodUnit);
 
         String[] whitelist = properties.getOrDefault("whitelist", "").split(",");
-        server = new FileServer(7070, whitelist);
+        String portStr = properties.getOrDefault("port", "");
+
+        int port;
+        if(portStr.contains("-")) {
+            _log.debug("Port range is used");
+            port = getFreePort(Integer.parseInt(portStr.split("-")[0]),
+                               Integer.parseInt(portStr.split("-")[1]));
+        } else {
+            _log.debug("Static port is used");
+            port = Integer.parseInt(portStr);
+        }
+        _log.info("Sapphire is running on port {}", port);
+
+        server = new FileServer(port, whitelist, "131.169.234.163");
         try {
             server.startServer();
         } catch (Exception e) {
             _log.error("Could not start Jetty server", e);
             throw new RuntimeException(e);
         }
+    }
 
+    private int getFreePort(int start, int end) {
+        _log.debug("Trying to find free port between {} and {}", start, end);
+        int port = start;
+        while (port < end) {
+            _log.debug("Trying port {}", port);
+            try {
+                new ServerSocket(port).close();
+                _log.debug("Port {} is free", port);
+                return port;
+            } catch (IOException e) {
+                _log.debug("Port {} is already used", port);
+                port += 1;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -204,7 +234,6 @@ public class SapphireDriver implements NearlineStorage
             server.stopServer();
         } catch (Exception e) {
             _log.error("Error stopping Jetty server", e);
-            throw new RuntimeException(e);
         }
     }
 

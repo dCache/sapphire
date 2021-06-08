@@ -10,7 +10,7 @@ public class FileServer {
     Server server;
     private static final Logger _log = LoggerFactory.getLogger(SapphireDriver.class);
 
-    public FileServer (int port, String[] whitelist) {
+    public FileServer (int port, String[] whitelist, String host) {
         server = new Server(port);
         ServletContextHandler handler = new ServletContextHandler(server, "/sapphire");
         handler.addServlet(FileServlet.class, "/v1");
