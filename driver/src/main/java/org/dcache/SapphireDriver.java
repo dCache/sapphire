@@ -285,6 +285,7 @@ public class SapphireDriver implements NearlineStorage
                         .append("group", request.getFileAttributes().getStorageInfo().getKey("group"))
                         .append("path", path.toString())
                         .append("parent", path.getParent().toString())
+                        .append("replica_uri", request.getReplicaUri().getPath())
                         .append("size", request.getFileAttributes().getSize())
                         .append("ctime", Double.parseDouble(Long.toString(request.getReplicaCreationTime())) / 1000)
                         .append("hsm_type", this.type)

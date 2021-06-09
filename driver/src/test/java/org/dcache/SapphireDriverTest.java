@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Map;
 import java.util.Set;
@@ -72,6 +73,7 @@ public class SapphireDriverTest {
                         .storageInfo(si)
                         .build()
         );
+        when(request.getReplicaUri()).thenReturn(URI.create("/some/dcache/path/file1"));
         when(request.activate()).thenReturn(Futures.immediateFuture(null));
         when(request.getId()).thenReturn(UUID.fromString(REQUEST_ID));
     }
