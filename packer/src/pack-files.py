@@ -365,7 +365,7 @@ class Container:
 
         for file in self.content:
             count_try = 0
-            url = driver_url
+            url = f"{driver_url}/v1"
             headers = {"file": file["replica_uri"]}
 
             while count_try < 3:
@@ -423,6 +423,7 @@ class Container:
             self.download_files()
         except requests.RequestException as e:
             logger.error(f"Abort packing container {self.name} due to failure of downloading files: {e}")
+            self.close()
             return
 
         for file in os.listdir(self.temp_directory):
