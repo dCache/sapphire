@@ -186,6 +186,7 @@ def main(configfile='/etc/dcache/container.conf'):
                         logger.info("Exiting")
                         sys.exit(0)
                     url = f"{webdav_door}/{archive['dest_path']}/{os.path.basename(archive['path'])}"
+
                     # Open ZIP-File and get filelist
                     logger.info(f"Processing archive {archive['path']}")
                     try:
@@ -317,13 +318,13 @@ def main(configfile='/etc/dcache/container.conf'):
                         logger.debug(f"Requesting checksum and pnfsid finished with status code {response_status_code}")
                         if response_status_code not in (200, 201):
                             logger.warning(f"Requesting checksum and pnfsid failed as the returned status code, "
-                                        f"{response_status_code}, is not 200 or 201. Retrying in a few seconds.")
+                                           f"{response_status_code}, is not 200 or 201. Retrying in a few seconds.")
                             retry_counter += 1
                             time.sleep(10)
                     if retry_counter == 4:
                         logger.critical(
                             f"Checksum and pnfsid of zip-file could not be requested from dCache, even after "
-                            f"retrying {retry_counter - 1} time(s). Please chack your dCache! Exiting script "
+                            f"retrying {retry_counter - 1} time(s). Please check your dCache! Exiting script "
                             f"now...")
                         sys.exit(1)
 
