@@ -5,6 +5,9 @@ import java.net.ServerSocket;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Predicate;
@@ -13,14 +16,18 @@ import static com.mongodb.client.model.Filters.*;
 
 import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.mongodb.MongoSocketOpenException;
+import com.mongodb.*;
 import com.mongodb.client.*;
+import diskCacheV111.util.Adler32;
+import org.apache.commons.io.FileUtils;
 import org.bson.Document;
 
 import org.dcache.pool.nearline.spi.FlushRequest;
 import org.dcache.pool.nearline.spi.NearlineStorage;
 import org.dcache.pool.nearline.spi.RemoveRequest;
 import org.dcache.pool.nearline.spi.StageRequest;
+import org.dcache.util.Checksum;
+import org.dcache.util.ChecksumType;
 import org.dcache.util.FireAndForgetTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +41,9 @@ public class SapphireDriver implements NearlineStorage
     protected final String name;
     private MongoClient mongoClient;
     MongoCollection<Document> files;
+    MongoCollection<Document> stageFiles;
     private final Queue<FlushRequest> flushRequestQueue;
+    private final Queue<StageRequest> stageRequestQueue;
     private final ScheduledExecutorService executorService;
     private FileServer server;
 
@@ -43,6 +52,7 @@ public class SapphireDriver implements NearlineStorage
         this.type = type;
         this.name = name;
         flushRequestQueue = new ConcurrentLinkedDeque<>();
+        stageRequestQueue = new ConcurrentLinkedDeque<>();
 
         ThreadFactory threadFactory = new ThreadFactoryBuilder()
                 .setNameFormat("sapphire-nearline-storage-%d")
@@ -84,7 +94,167 @@ public class SapphireDriver implements NearlineStorage
     @Override
     public void stage(Iterable<StageRequest> requests)
     {
-        throw new UnsupportedOperationException("Not implemented");
+        _log.debug("Stage triggered");
+
+        for(StageRequest stageRequest : requests) {
+            try {
+                stageRequest.activate().get();
+                stageRequestQueue.add(stageRequest);
+                _log.debug("Added {} to stageRequestQueue", stageRequest.getFileAttributes().getPnfsId());
+            } catch (ExecutionException | InterruptedException e) {
+                Throwable t = Throwables.getRootCause(e);
+                _log.error("Failed to activate request {}", t.getMessage());
+                stageRequest.failed(e);
+            }
+        }
+        _log.debug("Length of stageRequestQueue: {}", stageRequestQueue.size());
+    }
+
+    private Checksum calculateAdler32(File file) {
+        Adler32 newChecksum = new Adler32();
+        try {
+            byte [] fileArray = FileUtils.readFileToByteArray(file);
+            newChecksum.engineUpdate(fileArray, 0, fileArray.length);
+        } catch (IOException e) {
+            _log.error("Could not calculate checksum for file {}: ", file.getPath(), e);
+            return null;
+        }
+        return new Checksum(ChecksumType.ADLER32, newChecksum.engineDigest());
+    }
+
+    private Checksum calculateMd5(File file) {
+        MessageDigest md = null;
+        try {
+            md = MessageDigest.getInstance("MD5");
+            InputStream in = new DataInputStream(new FileInputStream(file));
+            DigestInputStream din = new DigestInputStream(in, md);
+            _log.debug("Value of DigestInputStream MD5: {}", din.read());
+        } catch (NoSuchAlgorithmException e) {
+            _log.error("Could not calculate checksum MD5, ", e);
+        } catch (FileNotFoundException e) {
+            _log.error("File not found for MD5 calculation");
+        } catch (IOException e) {
+            _log.error("IOException while reading: ", e);
+        }
+
+        if (md == null) {
+            return null;
+        } else {
+            return new Checksum(ChecksumType.MD5_TYPE, md.digest());
+        }
+    }
+
+    private void processStage() {
+        _log.debug("processStage() called");
+        Queue<StageRequest> notYetReady = new ArrayDeque<>();
+        StageRequest request;
+        String pnfsid;
+        File file;
+
+        while ((request = stageRequestQueue.poll()) != null) {
+            pnfsid = request.getFileAttributes().getPnfsId().toString();
+            file = new File(request.getReplicaUri());
+            _log.debug("Found request for file {} {}", pnfsid, file.getPath());
+
+            if (file.exists()) {
+                _log.debug("File {} exists", request.getFileAttributes().getPnfsId());
+                Optional<Set<Checksum>> requestChecksum = request.getFileAttributes().getChecksumsIfPresent();
+
+                if (requestChecksum.isPresent()) {
+                    Set<Checksum> requestChecksums = requestChecksum.get();
+                    boolean checksumFound  = false;
+
+                    for (Checksum checksum : requestChecksums) {
+                        _log.debug("Request checksum: {}", checksum.toString());
+
+                        ChecksumType checksumType = checksum.getType();
+                        Checksum newChecksum = null;
+
+                        if (checksumType.equals(ChecksumType.ADLER32)) {
+                            newChecksum = calculateAdler32(file);
+                        } else if (checksumType.equals(ChecksumType.MD5_TYPE)) {
+                            newChecksum = calculateMd5(file);
+                        }
+
+                        _log.debug("New checksum: {}", newChecksum != null ? newChecksum.toString() : "null");
+
+                        if (newChecksum != null && newChecksum.equals(checksum)) {
+                            _log.debug("Checksums are equal: {} ; {}", requestChecksum, newChecksum);
+
+                            request.completed(Collections.singleton(newChecksum));
+                            stageFiles.deleteOne(new Document("pnfsid", pnfsid));
+
+                            _log.info("Stage for file {} finished successfully", pnfsid);
+                            checksumFound = true;
+                            break;
+                        } else {
+                            _log.error((newChecksum == null ? "Could not calculate checksum" : "Checksums are not equal")
+                                    + " for file {}", pnfsid);
+                        }
+                    }
+                    if (!checksumFound) {
+                        _log.error("No checksum could be calculated or matched the original checksum. Deleting the " +
+                                "file and set the MongoDB record to stage the file again!");
+                        if (!file.delete()) {
+                            _log.error("Could not delete file {} {}",pnfsid, file.getPath());
+                        }
+                        stageFiles.updateOne(new Document("pnfsid", pnfsid), new Document("status", "new"));
+                    }
+                } else {
+                    _log.warn("There is no Checksum for file {} in dCache. " +
+                            "File is staged without checksum comparison!", pnfsid);
+                    Set<Checksum> checksums = new HashSet<>();
+                    checksums.add(calculateAdler32(file));
+                    checksums.add(calculateMd5(file));
+                    request.completed(checksums);
+                }
+            } else {
+                _log.debug("File not found {}", pnfsid);
+                Document result;
+                try {
+                    FindIterable<Document> results = stageFiles.find(new Document("pnfsid", pnfsid));
+                    result = results.first();
+                } catch (MongoException e) {
+                    _log.error("An error occured while requesting MongoDB to find files to be staged: ", e);
+                    notYetReady.add(request);
+                    continue;
+                }
+
+                if (result == null) {
+                    _log.debug("Add MongoDB Record");
+                    try {
+                        try {
+                            _log.debug("Location for file {}: {}", pnfsid, request.getFileAttributes().getStorageInfo().locations().get(0).toString());
+                        } catch (IndexOutOfBoundsException e) {
+                            _log.error("There are no locations available for file {}! ", pnfsid,  e);
+                            request.failed(e);
+                        } catch (IllegalStateException e) {
+                            _log.error("Could not get StorageInfo for file {}! ", pnfsid, e);
+                            request.failed(e);
+                        }
+                        String archive = request.getFileAttributes().getStorageInfo().locations().get(0).toString().split(":")[2];
+                        Document record = new Document();
+
+                        record.append("pnfsid", pnfsid)
+                              .append("archive", archive)
+                              .append("filepath", request.getReplicaUri().getPath())
+                              .append("status", "new");
+
+                        stageFiles.insertOne(record);
+                        request.allocate();
+                        _log.info("Start staging process for file {}", pnfsid);
+                    } catch (MongoException e) {
+                        _log.error("Record for file {} could not be written to MongoDB", pnfsid, e);
+                    }
+                } else {
+                    _log.debug("MongoDB record exists");
+                }
+                notYetReady.add(request);
+            }
+        }
+        _log.debug("NotYetReady size: {} will be added to stageRequestQueue now", notYetReady.size());
+        stageRequestQueue.addAll(notYetReady);
+
     }
 
     /**
@@ -170,11 +340,13 @@ public class SapphireDriver implements NearlineStorage
         }
         MongoDatabase mongoDatabase = mongoClient.getDatabase(database);
         files = mongoDatabase.getCollection("files");
+        stageFiles = mongoDatabase.getCollection("stage");
 
         long schedulerPeriod = Long.parseLong(properties.getOrDefault("period", "1"));
         TimeUnit periodUnit = TimeUnit.valueOf(properties.getOrDefault("period_unit", TimeUnit.MINUTES.name()));
 
         executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processFlush), schedulerPeriod, schedulerPeriod, periodUnit);
+        executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processStage), schedulerPeriod, schedulerPeriod, periodUnit);
 
         String[] whitelist = properties.getOrDefault("whitelist", "").split(",");
         String portStr = properties.getOrDefault("port", "");
@@ -183,14 +355,14 @@ public class SapphireDriver implements NearlineStorage
         if(portStr.contains("-")) {
             _log.debug("Port range is used");
             port = getFreePort(Integer.parseInt(portStr.split("-")[0]),
-                               Integer.parseInt(portStr.split("-")[1]));
+                    Integer.parseInt(portStr.split("-")[1]));
         } else {
             _log.debug("Static port is used");
             port = Integer.parseInt(portStr);
         }
         _log.info("Sapphire is running on port {}", port);
 
-        server = new FileServer(port, whitelist, "131.169.234.163");
+        server = new FileServer(port, whitelist);
         try {
             server.startServer();
         } catch (Exception e) {
@@ -270,6 +442,7 @@ public class SapphireDriver implements NearlineStorage
                         String archiveUrl = (String) result.get("archiveUrl");
                         URI fileUri = new URI(archiveUrl.replace("dcache://dcache", type + "://" + name));
                         _log.debug("archiveUrl exists, fileUri: {}", fileUri);
+                        _log.info("Location for file {} is {}", pnfsid, fileUri);
                         request.completed(Collections.singleton(fileUri));
                     } catch (URISyntaxException e) {
                         _log.error("Error completing flushRequest: " + e);
@@ -280,6 +453,7 @@ public class SapphireDriver implements NearlineStorage
                 }
             } else {
                 Path path = Path.of(request.getFileAttributes().getStorageInfo().getKey("path"));
+                _log.debug("Path: " + request.getFileAttributes().getStorageInfo());
                 Document entry = new Document("pnfsid", pnfsid)
                         .append("store", request.getFileAttributes().getStorageInfo().getKey("store"))
                         .append("group", request.getFileAttributes().getStorageInfo().getKey("group"))
