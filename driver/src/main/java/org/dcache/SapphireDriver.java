@@ -154,9 +154,18 @@ public class SapphireDriver implements NearlineStorage
         while ((request = stageRequestQueue.poll()) != null) {
             pnfsid = request.getFileAttributes().getPnfsId().toString();
             file = new File(request.getReplicaUri());
+            Document result = null;
             _log.debug("Found request for file {} {}", pnfsid, file.getPath());
+            try {
+                    FindIterable<Document> results = stageFiles.find(new Document("pnfsid", pnfsid));
+                    result = results.first();
+            } catch (MongoException e) {
+                _log.error("An error occured while requesting MongoDB to find files to be staged: ", e);
+                notYetReady.add(request);
+                continue;
+            }
 
-            if (file.exists()) {
+            if (result != null && result.get("status").equals("done") && file.exists()) {
                 _log.debug("File {} exists", request.getFileAttributes().getPnfsId());
                 Optional<Set<Checksum>> requestChecksum = request.getFileAttributes().getChecksumsIfPresent();
 
@@ -210,15 +219,6 @@ public class SapphireDriver implements NearlineStorage
                 }
             } else {
                 _log.debug("File not found {}", pnfsid);
-                Document result;
-                try {
-                    FindIterable<Document> results = stageFiles.find(new Document("pnfsid", pnfsid));
-                    result = results.first();
-                } catch (MongoException e) {
-                    _log.error("An error occured while requesting MongoDB to find files to be staged: ", e);
-                    notYetReady.add(request);
-                    continue;
-                }
 
                 if (result == null) {
                     _log.debug("Add MongoDB Record");
