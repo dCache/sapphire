@@ -38,10 +38,10 @@ public class SapphireDriverTest {
 
     private MongoServer mongoServer;
     private MongoClient mongoClient;
-    private MongoCollection<Document> collection;
+    private MongoCollection<Document> fileCollection;
 
     private SapphireDriver sapphireDriver;
-    private FlushRequest request;
+    private FlushRequest flushRequest;
 
     @BeforeEach
     public void setUp() {
@@ -60,85 +60,85 @@ public class SapphireDriverTest {
                 "port", "12300-12500"
         );
 
-        collection = mongoClient.getDatabase("hsm").getCollection("files");
+        fileCollection = mongoClient.getDatabase("hsm").getCollection("files");
         sapphireDriver.configure(config);
 
-        request = mock(FlushRequest.class);
+        flushRequest = mock(FlushRequest.class);
         StorageInfo si = GenericStorageInfo.valueOf("A:B@C", "*");
         si.setKey("path", "/some/dcache/path/file1");
-        when(request.getFileAttributes()).thenReturn(
+        when(flushRequest.getFileAttributes()).thenReturn(
                 FileAttributes.of()
                         .pnfsId(PNFS_ID)
                         .size(123)
                         .storageInfo(si)
                         .build()
         );
-        when(request.getReplicaUri()).thenReturn(URI.create("/some/dcache/path/file1"));
-        when(request.activate()).thenReturn(Futures.immediateFuture(null));
-        when(request.getId()).thenReturn(UUID.fromString(REQUEST_ID));
+        when(flushRequest.getReplicaUri()).thenReturn(URI.create("/some/dcache/path/file1"));
+        when(flushRequest.activate()).thenReturn(Futures.immediateFuture(null));
+        when(flushRequest.getId()).thenReturn(UUID.fromString(REQUEST_ID));
     }
 
     @Test
-    public void shouldActiveRequestOnSubmit() {
-        sapphireDriver.flush(Set.of(request));
-        verify(request).activate();
+    public void shouldActiveFlushRequestOnSubmit() {
+        sapphireDriver.flush(Set.of(flushRequest));
+        verify(flushRequest).activate();
     }
 
     @Test
     public void shouldPopulateDb() {
-        sapphireDriver.flush(Set.of(request));
+        sapphireDriver.flush(Set.of(flushRequest));
         waitForDriverRun(2);
 
-        assertNotNull(collection.find(eq("pnfsid", PNFS_ID)).first(), "mongo db is not populated");
+        assertNotNull(fileCollection.find(eq("pnfsid", PNFS_ID)).first(), "mongo db is not populated");
     }
 
     @Test
-    public void shouldSuccessWhenUrlProvided() {
-        sapphireDriver.flush(Set.of(request));
+    public void shouldSuccessFlushWhenUrlProvided() {
+        sapphireDriver.flush(Set.of(flushRequest));
 
         waitForDriverRun(2);
 
-        collection.updateOne(eq("pnfsid", PNFS_ID),
+        fileCollection.updateOne(eq("pnfsid", PNFS_ID),
                 new Document("$set", new BasicBSONObject().append("archiveUrl",  "dcache://dcache/123:456")));
 
         waitForDriverRun(2);
-        verify(request).completed(anySet());
-        assertNull(collection.find(eq("pnfsid", PNFS_ID)).first(), "Completed entry not removed");
+        verify(flushRequest).completed(anySet());
+        assertNull(fileCollection.find(eq("pnfsid", PNFS_ID)).first(), "Completed entry not removed");
     }
 
     @Test
-    public void shouldFailOnBadUrl() {
-        sapphireDriver.flush(Set.of(request));
+    public void shouldFailFlushOnBadUrl() {
+        sapphireDriver.flush(Set.of(flushRequest));
 
         waitForDriverRun(2);
 
-        collection.updateOne(eq("pnfsid", PNFS_ID),
+        fileCollection.updateOne(eq("pnfsid", PNFS_ID),
                 new Document("$set", new BasicBSONObject().append("archiveUrl",  "123:456")));
 
         waitForDriverRun(2);
-        verify(request).failed(any(URISyntaxException.class));
-        assertNull(collection.find(eq("pnfsid", PNFS_ID)).first(), "Failed entry not removed");
+        verify(flushRequest).failed(any(URISyntaxException.class));
+        assertNull(fileCollection.find(eq("pnfsid", PNFS_ID)).first(), "Failed entry not removed");
     }
 
     @Test
     public void shouldFailOnCancelRequest() {
-        sapphireDriver.flush(Set.of(request));
+        sapphireDriver.flush(Set.of(flushRequest));
 
         waitForDriverRun(2);
 
         sapphireDriver.cancel(UUID.fromString(REQUEST_ID));
-        verify(request).failed(any(CancellationException.class));
-        assertNull(collection.find(eq("pnfsid", PNFS_ID)).first(), "Canceled entry not removed");
+        verify(flushRequest).failed(any(CancellationException.class));
+        assertNull(fileCollection.find(eq("pnfsid", PNFS_ID)).first(), "Canceled entry not removed");
     }
 
     @Test
     public void shouldNotCancelForRandomID() {
-        sapphireDriver.flush(Set.of(request));
+        sapphireDriver.flush(Set.of(flushRequest));
 
         waitForDriverRun(2);
 
         sapphireDriver.cancel(UUID.randomUUID());
-        assertNotNull(collection.find(eq("pnfsid", PNFS_ID)).first(), "Should not remove when UUID doesn't match");
+        assertNotNull(fileCollection.find(eq("pnfsid", PNFS_ID)).first(), "Should not remove when UUID doesn't match");
     }
 
     @AfterEach
