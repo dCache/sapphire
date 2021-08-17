@@ -113,6 +113,8 @@ def download_archive(archive, webdav_door, macaroon, tmp_path):
     headers = {"Content-Type": "application/octet-stream",
                "Authorization": f"Bearer {macaroon}"}
     archive_path = get_archive_path(archive, headers)
+    if archive_path is None:
+        return False
     url = f"{webdav_door}/{archive_path}"
     response = requests.get(url, headers=headers)
     global working_dir
@@ -243,6 +245,8 @@ def main(config="/etc/dcache/container.conf"):
             pnfsid = request['pnfsid']
             logger.debug(f"File {pnfsid}")
             location_found = False
+
+            logger.debug(f"File {pnfsid} hast {len(locations)} locations.")
 
             for location in locations:
                 archive = extract_archive(location)
