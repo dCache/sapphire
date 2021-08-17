@@ -11,6 +11,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import static com.mongodb.client.model.Filters.*;
 
@@ -20,6 +21,8 @@ import com.mongodb.*;
 import com.mongodb.client.*;
 import diskCacheV111.util.Adler32;
 import org.apache.commons.io.FileUtils;
+import org.bson.BsonArray;
+import org.bson.BsonString;
 import org.bson.Document;
 
 import org.dcache.pool.nearline.spi.FlushRequest;
@@ -122,7 +125,7 @@ public class SapphireDriver implements NearlineStorage
         return new Checksum(ChecksumType.ADLER32, newChecksum.engineDigest());
     }
 
-    private Checksum calculateMd5(File file) {
+    private Checksum calculateMd5(File file) { // TODO Needs testing
         MessageDigest md = null;
         try {
             md = MessageDigest.getInstance("MD5");
@@ -171,7 +174,7 @@ public class SapphireDriver implements NearlineStorage
 
                 if (requestChecksum.isPresent()) {
                     Set<Checksum> requestChecksums = requestChecksum.get();
-                    boolean checksumFound  = false;
+                    boolean checksumFound = false;
 
                     for (Checksum checksum : requestChecksums) {
                         _log.debug("Request checksum: {}", checksum.toString());
@@ -205,7 +208,7 @@ public class SapphireDriver implements NearlineStorage
                         _log.error("No checksum could be calculated or matched the original checksum. Deleting the " +
                                 "file and set the MongoDB record to stage the file again!");
                         if (!file.delete()) {
-                            _log.error("Could not delete file {} {}",pnfsid, file.getPath());
+                            _log.error("Could not delete file {} {}", pnfsid, file.getPath());
                         }
                         stageFiles.updateOne(new Document("pnfsid", pnfsid), new Document("status", "new"));
                     }
@@ -217,27 +220,37 @@ public class SapphireDriver implements NearlineStorage
                     checksums.add(calculateMd5(file));
                     request.completed(checksums);
                 }
+            } else if (result != null && result.get("status").equals("failure")) {
+                _log.error("Staging the file failed on packer side. Please look into logs of stage-files.py on the packing node for more information!");
+                request.failed(new FileNotFoundException("Unable to stage file"));
             } else {
                 _log.debug("File not found {}", pnfsid);
 
                 if (result == null) {
                     _log.debug("Add MongoDB Record");
                     try {
+                        List<URI> locations = null;
                         try {
                             _log.debug("Location for file {}: {}", pnfsid, request.getFileAttributes().getStorageInfo().locations().get(0).toString());
+                            locations = request.getFileAttributes().getStorageInfo().locations();
                         } catch (IndexOutOfBoundsException e) {
                             _log.error("There are no locations available for file {}! ", pnfsid,  e);
                             request.failed(e);
+                            continue;
                         } catch (IllegalStateException e) {
                             _log.error("Could not get StorageInfo for file {}! ", pnfsid, e);
                             request.failed(e);
+                            continue;
                         }
-                        String archive = request.getFileAttributes().getStorageInfo().locations().get(0).toString().split(":")[2];
                         Document record = new Document();
 
+                        List<String> locationList = locations.stream().map(URI::toString).collect(Collectors.toList());
+                        List<BsonString> bsonLocations = locationList.stream().map(BsonString::new).collect(Collectors.toList());
+
+
                         record.append("pnfsid", pnfsid)
-                              .append("archive", archive)
                               .append("filepath", request.getReplicaUri().getPath())
+                              .append("locations", new BsonArray(bsonLocations))
                               .append("status", "new");
 
                         stageFiles.insertOne(record);
@@ -415,7 +428,9 @@ public class SapphireDriver implements NearlineStorage
         }
         executorService.shutdown();
         try {
-            server.stopServer();
+            if (server != null) {
+                server.stopServer();
+            }
         } catch (Exception e) {
             _log.error("Error stopping Jetty server", e);
         }
