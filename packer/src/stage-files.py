@@ -49,8 +49,7 @@ def read_config(configfile):
         mongo_db = configuration.get('DEFAULT', 'mongo_db')
         working_dir = configuration.get("DEFAULT", "working_dir")
         working_dir = f"{working_dir}/stage-tmp"
-        stage_wait_min = configuration.get("DEFAULT", "stage_wait_min")
-        stage_wait_max = configuration.get("DEFAULT", "stage_wait_max")
+        keep_archive_time = configuration.get("DEFAULT", "keep_archive_time")
     except FileNotFoundError:
         print(f'Configuration file "{configfile}" not found.')
         raise
@@ -92,19 +91,8 @@ def read_config(configfile):
         print("Invalid database name")
         raise ValueError("mongo_db contains an invalid charakter like '.'")
 
-    try:
-        float(stage_wait_min)
-    except ValueError:
-        logger.error(f"stage_wait_min in configuration is not a number: {stage_wait_min}")
-    try:
-        float(stage_wait_max)
-    except ValueError:
-        logger.error(f"stage_wait_max in configuration is not a number: {stage_wait_max}")
-
-    if stage_wait_min > stage_wait_max:
-        logger.error(f"stage_wait_min is bigger than stage_wait_max!")
-        raise ValueError("stage_wait_min is bigger than stage_wait_max")
-
+    if not int(keep_archive_time):
+        raise ValueError("keep_archive_time could not be converted to an integer. Please check if this value is a number!")
     return configuration
 
 
@@ -138,6 +126,47 @@ def download_archive(archive, webdav_door, macaroon, tmp_path):
         return False
 
 
+def extract_archive(location):
+    return location.split(":")[-1]
+
+
+def unpack_upload_file(archive, pnfsid, filepath, url, mongo_db):
+    with zipfile.ZipFile(os.path.join(working_dir, archive)) as zip_file:
+        files = {"file": (pnfsid, zip_file.read(pnfsid), "text/plain")}
+        data, content_type = requests.models.RequestEncodingMixin._encode_files(files, {})
+        headers = {"Content-Type": content_type, "file": filepath}
+
+        response = requests.post(url, data=data, headers=headers)
+        logger.debug(f"Upload status code: {response.status_code}")
+
+        stat = os.stat(os.path.join(working_dir, archive))
+        os.utime(os.path.join(working_dir, archive),
+                 times=(datetime.datetime.now().timestamp(), stat.st_mtime))  # Update access time of archive
+
+        if response.status_code == 200:
+            logger.info(f"File {pnfsid} was uploaded to dCache successfully")
+            mongo_db.stage.update_one({"pnfsid": pnfsid}, {"$set": {"status": "done"}})
+            return True
+        else:
+            logger.warning(f"File {pnfsid} could not be uploaded to dCache. Code: {response.status_code}")
+            return False
+
+
+def cleanup_archives(keep_archive_time):
+    global working_dir
+    # Keep archives for <keep_archive_time> minutes before removing them
+    existing_archives = os.listdir(working_dir)
+    logger.debug(f"Existing archives: {existing_archives}")
+    for archive in existing_archives:
+        last_access_time = os.path.getatime(os.path.join(working_dir, archive))
+        time_threshold = datetime.datetime.timestamp(datetime.datetime.now() -
+                                                     datetime.timedelta(minutes=keep_archive_time))
+
+        if last_access_time < time_threshold:
+            logger.info(f"Archive {archive} was not accessed since {keep_archive_time} minutes and will be deleted now.")
+            os.remove(os.path.join(working_dir, archive))
+
+
 def main(config="/etc/dcache/container.conf"):
     global running
     global logger
@@ -148,14 +177,14 @@ def main(config="/etc/dcache/container.conf"):
         configuration = read_config(config)
 
         mongo_uri = configuration.get('DEFAULT', 'mongo_url')
-        mongo_db = configuration.get('DEFAULT', 'mongo_db')
+        mongo_db_name = configuration.get('DEFAULT', 'mongo_db')
         webdav_door = configuration.get("DEFAULT", "webdav_door")
         macaroon = configuration.get("DEFAULT", "macaroon")
         driver_url = configuration.get("DEFAULT", "driver_url")
         log_level_str = configuration.get("DEFAULT", "log_level")
         script_id = configuration.get("DEFAULT", "script_id")
-        stage_wait_min = configuration.get("DEFAULT", "stage_wait_min")
-        stage_wait_max = configuration.get("DEFAULT", "stage_wait_max")
+        keep_archive_time = configuration.get("DEFAULT", "keep_archive_time")
+        keep_archive_time = int(keep_archive_time)
 
         log_level = getattr(logging, log_level_str.upper(), None)
         logger.setLevel(log_level)
@@ -172,93 +201,69 @@ def main(config="/etc/dcache/container.conf"):
         logger.debug(f"Script ID: {script_id}")
         logger.debug(f"Log level: {log_level_str}")
         logger.debug(f"Mongo URI: {mongo_uri}")
-        logger.debug(f"Mongo database: {mongo_db}")
+        logger.debug(f"Mongo database: {mongo_db_name}")
         logger.debug(f"Webdav Door: {webdav_door}")
         logger.debug(f"Macaroon: {macaroon}")
         logger.debug(f"Driver URL: {driver_url}")
+        logger.debug(f"Keep archive time: {keep_archive_time}")
 
         logger.info(f'Successfully read configuration from file {config}.')
 
         try:
             client = MongoClient(mongo_uri)
-            db = client[mongo_db]
+            mongo_db = client[mongo_db_name]
 
-            # Get records for stage, sorted by archive
-            pipeline = [{"$unwind": "$archive"},
-                        {"$match": {"status": "new"}},
-                        {"$sort": SON([("archive", -1)])}]
-            results = list(db.stage.aggregate(pipeline))
+            results = mongo_db.stage.find({"status": "new"})
         except (pymongo.errors.ConnectionFailure, pymongo.errors.InvalidURI, pymongo.errors.InvalidName,
                 pymongo.errors.ServerSelectionTimeoutError) as e:
             logger.error(f"Connection to MongoDB failed, sleeping 30s now: {e}")
             time.sleep(30)
             continue
 
-        if len(results) == 0:
+        length_results = mongo_db.stage.count_documents({"status": "new"})
+
+        if length_results == 0:
             logger.info(f"Found no files to be staged in MongoDB. Sleeping 30s now")
+            cleanup_archives(keep_archive_time)
             time.sleep(30)
             continue
         else:
-            logger.info(f"Found {len(results)} files to be staged.")
+            logger.info(f"Found {length_results} files to be staged.")
 
-        archive_files = dict()
+        if not os.path.exists(working_dir):
+            os.mkdir(working_dir)
 
-        # Group results by archive
-        for element in results:
-            if element['archive'] not in archive_files.keys():
-                archive_files[element['archive']] = {}
-            archive_files[element['archive']][element['pnfsid']] = element['filepath']
-
-        if not os.path.exists(f"{working_dir}"):
-            os.mkdir(f"{working_dir}")
-
-        for archive in archive_files:
+        url = f"{driver_url}/stage"
+        for request in results:
             if not running:
-                logger.debug("Running is set to false")
-                shutil.rmtree(working_dir)
+                logger.info(f"Stopping script due to running set to false")
                 return
-            logger.info(f"Found {len(archive_files[archive])} files for archive {archive}")
 
-            min_threshold = datetime.datetime.now() - datetime.timedelta(seconds=float(stage_wait_min))
-            max_threshold = datetime.datetime.now() - datetime.timedelta(seconds=float(stage_wait_max))
-            min_threshold = bson.ObjectId.from_datetime(min_threshold)
-            max_threshold = bson.ObjectId.from_datetime(max_threshold)
+            locations = request['locations']
+            pnfsid = request['pnfsid']
+            logger.debug(f"File {pnfsid}")
+            location_found = False
 
-            files_too_new = True if len(list(db.stage.find({"$and": [{"_id": {"$gt": min_threshold}}, {"archive": archive}]}))) > 0 else False
-            files_too_old = True if len(list(db.stage.find({"$and": [{"_id": {"$lt": max_threshold}}, {"archive": archive}]}))) > 0 else False
+            for location in locations:
+                archive = extract_archive(location)
+                logger.debug(f"location: {location}\nextracted archive: {archive}")
+                if not os.path.isfile(os.path.join(working_dir, archive)):
+                    if not download_archive(archive, webdav_door, macaroon, working_dir):
+                        location_found = False
+                        continue
+                if unpack_upload_file(archive, pnfsid, request["filepath"], url, mongo_db):
+                    logger.info(f"File {pnfsid} was uploaded to dCache successfully")
+                    location_found = True
+                    break
+                else:
+                    logger.error(f"Unpacking and uploading file {pnfsid} did not work!")
 
-            if files_too_new and not files_too_old:
-                logger.info(f"There are records for archive {archive} that are too young, but no records that are too "
-                            f"old. Skipping archive for this run.")
-                continue
-
-            # Download archive and unpack files in archive
-            tmp_path = f"{working_dir}/{archive}-tmp"
-            os.mkdir(tmp_path)
-
-            if not download_archive(archive, webdav_door, macaroon, tmp_path):
-                logger.error("Downloading archive failed.")
-                continue
-
-            url = f"{driver_url}/stage"
-            with zipfile.ZipFile(f"{working_dir}/{archive}", "r") as zip_file:
-                for file in archive_files[archive].keys():
-                    files = {'file': (file, zip_file.read(file), "text/plain")}
-                    # TODO Replace so that no private function is used:
-                    data, content_type = requests.models.RequestEncodingMixin._encode_files(files, {})
-                    headers = {"Content-Type": content_type, "file": archive_files[archive][file]}
-
-                    response = requests.post(url, data=data, headers=headers)
-                    logger.debug(f"Upload status code: {response.status_code}")
-                    if response.status_code == 200:
-                        logger.info(f"File {file} was uploaded to dCache successfully")
-                        db.stage.update_one({"pnfsid": file}, {"$set": {"status": "done"}})
-                    else:
-                        logger.warning(f"File {file} could not be uploaded to dCache.")
-            shutil.rmtree(f"{working_dir}/{archive}-tmp")
+            if not location_found:
+                logger.error(f"No working location found for file {pnfsid}!")
+                mongo_db.stage.update_one({"pnfsid": pnfsid}, {"$set": {"status": "failure"}})
 
         logger.debug("finished, tidy up")
-        shutil.rmtree(working_dir)
+        cleanup_archives(keep_archive_time)
         logger.info("Finished run, sleeping now for 30 s")
         time.sleep(30)
 
