@@ -222,6 +222,7 @@ public class SapphireDriver implements NearlineStorage
                 }
             } else if (result != null && result.get("status").equals("failure")) {
                 _log.error("Staging the file failed on packer side. Please look into logs of stage-files.py on the packing node for more information!");
+                stageFiles.deleteOne(new Document("pnfsid", pnfsid));
                 request.failed(new FileNotFoundException("Unable to stage file"));
             } else {
                 _log.debug("File not found {}", pnfsid);
