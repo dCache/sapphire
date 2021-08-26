@@ -1,22 +1,56 @@
 package org.dcache;
 
-import org.eclipse.jetty.server.Server;
+import eu.emi.security.authn.x509.X509CertChainValidatorExt;
+import eu.emi.security.authn.x509.helpers.ssl.SSLTrustManager;
+import eu.emi.security.authn.x509.impl.CertificateUtils;
+import eu.emi.security.authn.x509.impl.DirectoryCertChainValidator;
+import eu.emi.security.authn.x509.impl.PEMCredential;
+import org.eclipse.jetty.server.*;
 import org.eclipse.jetty.server.handler.InetAccessHandler;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
 import javax.servlet.MultipartConfigElement;
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Paths;
+import java.security.GeneralSecurityException;
+import java.util.List;
 
 public class FileServer {
     Server server;
     private static final Logger _log = LoggerFactory.getLogger(SapphireDriver.class);
 
-    public FileServer (int port, String[] whitelist) {
-        server = new Server(port);
+    public FileServer (int port, String[] whitelist) throws GeneralSecurityException, IOException {
+        try {
+            _log.warn("key is file: {} ;; cert is file: {}", new File("/etc/grid-security/hostkey.pem").isFile(), new File("/etc/grid-security/hostcert.pem").isFile());
+            _log.warn("This is me: {}", System.getProperty("user.name"));
+        } catch (Exception e) {
+            _log.error("Unable to print: ", e);
+        }
+
+        server = new Server();
+
+        HttpConfiguration httpConfiguration = new HttpConfiguration();
+        httpConfiguration.addCustomizer(new SecureRequestCustomizer());
+
+        HttpConnectionFactory http11 = new HttpConnectionFactory(httpConfiguration);
+        SslContextFactory sslContextFactory = new SslContextFactory.Server();
+        sslContextFactory.setSslContext(createSslContext("/etc/grid-security/hostcert.pem", "/etc/grid-security/hostkey.pem", new char[0], "/dev/null"));
+
+        SslConnectionFactory tls = new SslConnectionFactory(sslContextFactory, http11.getProtocol());
+        ServerConnector connector = new ServerConnector(server, tls, http11);
+        connector.setPort(port);
+        server.addConnector(connector);
+
         ServletContextHandler handler = new ServletContextHandler(server, "/sapphire");
+
         handler.addServlet(FileServlet.class, "/v1");
 
         ServletHolder stageServletHolder = new ServletHolder(new StageServlet());
@@ -46,5 +80,31 @@ public class FileServer {
     public void stopServer() throws Exception {
         server.stop();
         _log.info("Sapphire-server stopped");
+    }
+
+    public static SSLContext createSslContext(
+            String certificateFile, String certificateKeyFile, char[] keyPassword, String trustStore)
+            throws IOException, GeneralSecurityException {
+
+        // due to bug in canl https://github.com/eu-emi/canl-java/issues/100 enforce absolute path
+        if (trustStore.charAt(0) != '/') {
+            trustStore = new File(".", trustStore).getAbsolutePath();
+        }
+
+        X509CertChainValidatorExt certificateValidator =
+                new DirectoryCertChainValidator(
+                        List.of(trustStore), CertificateUtils.Encoding.PEM, -1, 5000, null);
+
+        PEMCredential serviceCredentials =
+                new PEMCredential(certificateKeyFile, certificateFile, keyPassword);
+
+        KeyManager keyManager = serviceCredentials.getKeyManager();
+        KeyManager[] kms = new KeyManager[]{keyManager};
+        SSLTrustManager tm = new SSLTrustManager(certificateValidator);
+
+        SSLContext sslCtx = SSLContext.getInstance("TLS");
+        sslCtx.init(kms, new TrustManager[]{tm}, null);
+
+        return sslCtx;
     }
 }

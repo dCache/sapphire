@@ -388,8 +388,8 @@ public class SapphireDriver implements NearlineStorage
         }
         _log.info("Sapphire is running on port {}", port);
 
-        server = new FileServer(port, whitelist);
         try {
+            server = new FileServer(port, whitelist);
             server.startServer();
         } catch (Exception e) {
             _log.error("Could not start Jetty server", e);
