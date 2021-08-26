@@ -132,11 +132,11 @@ def extract_archive(location):
     return location.split(":")[-1]
 
 
-def unpack_upload_file(archive, pnfsid, filepath, url, mongo_db):
+def unpack_upload_file(archive, pnfsid, filepath, url, mongo_db, macaroon):
     with zipfile.ZipFile(os.path.join(working_dir, archive)) as zip_file:
         files = {"file": (pnfsid, zip_file.read(pnfsid), "text/plain")}
         data, content_type = requests.models.RequestEncodingMixin._encode_files(files, {})
-        headers = {"Content-Type": content_type, "file": filepath}
+        headers = {"Content-Type": content_type, "file": filepath, "Authorization": f"Bearer {macaroon}"}
 
         response = requests.post(url, data=data, headers=headers)
         logger.debug(f"Upload status code: {response.status_code}")
@@ -255,7 +255,7 @@ def main(config="/etc/dcache/container.conf"):
                     if not download_archive(archive, webdav_door, macaroon, working_dir):
                         location_found = False
                         continue
-                if unpack_upload_file(archive, pnfsid, request["filepath"], url, mongo_db):
+                if unpack_upload_file(archive, pnfsid, request["filepath"], url, mongo_db, macaroon):
                     logger.info(f"File {pnfsid} was uploaded to dCache successfully")
                     location_found = True
                     break
