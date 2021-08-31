@@ -379,6 +379,7 @@ class Container:
                     else:
                         logger.error(f"Downloading file {file['pnfsid']} failed 3 times. Going to abort packing this "
                                      f"container now.")
+                        self.reset_mongodb_records()
                         self.current_size = 0
                         self.close()
                         raise
@@ -392,6 +393,7 @@ class Container:
             else:
                 logger.error(f"Downloading file {file['pnfsid']} failed with status code {response.status_code}. "
                              f"Abort packing this container.")
+                self.reset_mongodb_records()
                 raise requests.RequestException(f"Status code not 200, but {response.status_code}")
 
         logger.info(f"Finished downloading files to {self.temp_directory}")
@@ -468,6 +470,9 @@ class Container:
 
     def is_full(self):
         return self.current_size >= self.archive_size
+
+    def reset_mongodb_records(self):
+        mongo_db.files.update_many({"state": f"added: {self.filepath}"}, {"state": "new"})
 
 
 def main(configfile="/etc/dcache/container.conf"):
