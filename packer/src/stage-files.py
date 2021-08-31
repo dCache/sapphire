@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # coding=utf-8
 
-import bson
-from bson.son import SON
 import configparser as parser
 import datetime
 import logging
@@ -12,7 +10,6 @@ import os
 import pymongo.errors
 from pymongo import MongoClient
 import requests
-import shutil
 import signal
 import sys
 import time
@@ -99,9 +96,9 @@ def read_config(configfile):
     return configuration
 
 
-def get_archive_path(pnfsid, headers):
+def get_archive_path(pnfsid, headers, frontend):
     logger.debug(f"Called get_archive_path for {pnfsid}")
-    url = f"https://os-smeyer-dcache-test02.desy.de:3880/api/v1/id/{pnfsid}"
+    url = f"{frontend}/api/v1/id/{pnfsid}"
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         json_response = json.loads(response.content.decode("utf-8"))
@@ -111,11 +108,11 @@ def get_archive_path(pnfsid, headers):
         return None
 
 
-def download_archive(archive, webdav_door, macaroon, tmp_path):
+def download_archive(archive, webdav_door, frontend, macaroon, tmp_path):
     logger.debug(f"Called download_archive for {archive}")
     headers = {"Content-Type": "application/octet-stream",
                "Authorization": f"Bearer {macaroon}"}
-    archive_path = get_archive_path(archive, headers)
+    archive_path = get_archive_path(archive, headers, frontend)
     if archive_path is None:
         return False
     url = f"{webdav_door}/{archive_path}"
@@ -184,6 +181,7 @@ def main(config="/etc/dcache/container.conf"):
         mongo_uri = configuration.get('DEFAULT', 'mongo_url')
         mongo_db_name = configuration.get('DEFAULT', 'mongo_db')
         webdav_door = configuration.get("DEFAULT", "webdav_door")
+        frontend = configuration.get("DEFAULT", "frontend")
         macaroon = configuration.get("DEFAULT", "macaroon")
         driver_url = configuration.get("DEFAULT", "driver_url")
         log_level_str = configuration.get("DEFAULT", "log_level")
@@ -255,7 +253,7 @@ def main(config="/etc/dcache/container.conf"):
                 archive = extract_archive(location)
                 logger.debug(f"location: {location}\nextracted archive: {archive}")
                 if not os.path.isfile(os.path.join(working_dir, archive)):
-                    if not download_archive(archive, webdav_door, macaroon, working_dir):
+                    if not download_archive(archive, webdav_door, frontend, macaroon, working_dir):
                         location_found = False
                         continue
                 if unpack_upload_file(archive, pnfsid, request["filepath"], url, mongo_db, macaroon):
