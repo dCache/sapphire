@@ -30,7 +30,7 @@ def sigint_handler(signum, frame):
 
 def uncaught_handler(*exc_info):
     err_text = "".join(traceback.format_exception(*exc_info))
-    print(err_text)
+    logging.critical(err_text)
     sys.stderr.write(err_text)
 
 
