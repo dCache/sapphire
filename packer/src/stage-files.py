@@ -147,7 +147,11 @@ def unpack_upload_file(archive, pnfsid, filepath, url, mongo_db, macaroon):
 
         if response.status_code == 200:
             logger.info(f"File {pnfsid} was uploaded to dCache successfully")
-            mongo_db.stage.update_one({"pnfsid": pnfsid}, {"$set": {"status": "done"}})
+            try:
+                mongo_db.stage.update_one({"pnfsid": pnfsid}, {"$set": {"status": "done"}})
+            except (pymongo.errors.ConnectionFailure, pymongo.errors.ServerSelectionTimeoutError) as e:
+                logger.error(f"Could not set record for {pnfsid} to done, caused by: {e}")
+                return False
             return True
         else:
             logger.warning(f"File {pnfsid} could not be uploaded to dCache. Code: {response.status_code}")
@@ -217,13 +221,12 @@ def main(config="/etc/dcache/container.conf"):
             mongo_db = client[mongo_db_name]
 
             results = mongo_db.stage.find({"status": "new"})
+            length_results = mongo_db.stage.count_documents({"status": "new"})
         except (pymongo.errors.ConnectionFailure, pymongo.errors.InvalidURI, pymongo.errors.InvalidName,
                 pymongo.errors.ServerSelectionTimeoutError) as e:
             logger.error(f"Connection to MongoDB failed, sleeping 30s now: {e}")
             time.sleep(30)
             continue
-
-        length_results = mongo_db.stage.count_documents({"status": "new"})
 
         if length_results == 0:
             logger.info(f"Found no files to be staged in MongoDB. Sleeping 30s now")
@@ -247,7 +250,7 @@ def main(config="/etc/dcache/container.conf"):
             logger.debug(f"File {pnfsid}")
             location_found = False
 
-            logger.debug(f"File {pnfsid} hast {len(locations)} locations.")
+            logger.debug(f"File {pnfsid} has {len(locations)} locations.")
 
             for location in locations:
                 archive = extract_archive(location)
@@ -265,7 +268,11 @@ def main(config="/etc/dcache/container.conf"):
 
             if not location_found:
                 logger.error(f"No working location found for file {pnfsid}!")
-                mongo_db.stage.update_one({"pnfsid": pnfsid}, {"$set": {"status": "failure"}})
+                try:
+                    mongo_db.stage.update_one({"pnfsid": pnfsid}, {"$set": {"status": "failure"}})
+                except (pymongo.errors.ConnectionFailure, pymongo.errors.ServerSelectionTimeoutError) as e:
+                    logger.error(f"Could not set record for {pnfsid} to failure, caused by: {e}")
+                    break
 
         logger.debug("finished, tidy up")
         cleanup_archives(keep_archive_time)
