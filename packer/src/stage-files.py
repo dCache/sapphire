@@ -132,19 +132,21 @@ def get_archive_path(pnfsid, headers, frontend):
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         json_response = json.loads(response.content.decode("utf-8"))
-        return json_response['path']
+        return json_response['path'], 200
     else:
         logger.error(f"Could not get archive path, status code: {response.status_code}")
-        return None
+        return None, response.status_code
 
 
 def download_archive(archive, webdav_door, frontend, macaroon, tmp_path):
     logger.debug(f"Called download_archive for {archive}")
     headers = {"Content-Type": "application/octet-stream",
                "Authorization": f"Bearer {macaroon}"}
-    archive_path = get_archive_path(archive, headers, frontend)
-    if archive_path is None:
-        return False
+    archive_path, archive_response = get_archive_path(archive, headers, frontend)
+    if archive_response == 401:
+        return 401
+    elif archive_path is None:
+        return 1
     url = f"{webdav_door}/{archive_path}"
     response = requests.get(url, headers=headers)
     global working_dir
@@ -152,10 +154,11 @@ def download_archive(archive, webdav_door, frontend, macaroon, tmp_path):
     if response.status_code == 200:
         open(f"{working_dir}/{archive}", "wb").write(response.content)
         logger.info(f"Download archive {archive} successfully")
-        return True
+    elif response.status_code == 401:
+        logger.error(f"The given macaroon is invalid or expired.")
     else:
         logging.error(f"Error: Downloading archive failed with code {response.status_code}")
-        return False
+    return response.status_code
 
 
 def extract_archive(location):
@@ -270,6 +273,7 @@ def main(config="/etc/dcache/container.conf"):
             os.mkdir(working_dir)
 
         url = f"{driver_url}/stage"
+        download_code = -1
         for request in results:
             if not running:
                 logger.info(f"Stopping script due to running set to false")
@@ -278,7 +282,6 @@ def main(config="/etc/dcache/container.conf"):
             locations = request['locations']
             pnfsid = request['pnfsid']
             logger.debug(f"File {pnfsid}")
-            location_found = False
 
             logger.debug(f"File {pnfsid} has {len(locations)} locations.")
 
@@ -286,23 +289,29 @@ def main(config="/etc/dcache/container.conf"):
                 archive = extract_archive(location)
                 logger.debug(f"location: {location}\nextracted archive: {archive}")
                 if not os.path.isfile(os.path.join(working_dir, archive)):
-                    if not download_archive(archive, webdav_door, frontend, macaroon, working_dir):
-                        location_found = False
+                    download_code = download_archive(archive, webdav_door, frontend, macaroon, working_dir)
+                    if download_code not in (200, 401):
                         continue
+                    elif download_code == 401:
+                        break
                 if unpack_upload_file(archive, pnfsid, request["filepath"], url, mongo_db, macaroon):
                     logger.info(f"File {pnfsid} was uploaded to dCache successfully")
-                    location_found = True
                     break
                 else:
                     logger.error(f"Unpacking and uploading file {pnfsid} did not work!")
 
-            if not location_found:
+            logger.debug(f"Download code is {download_code}")
+
+            if download_code not in (200, 401):
                 logger.error(f"No working location found for file {pnfsid}!")
                 try:
                     mongo_db.stage.update_one({"pnfsid": pnfsid}, {"$set": {"status": "failure"}})
                 except (pymongo.errors.ConnectionFailure, pymongo.errors.ServerSelectionTimeoutError) as e:
                     logger.error(f"Could not set record for {pnfsid} to failure, caused by: {e}")
                     break
+            elif download_code == 401:
+                logger.error("The macaroon being used is invalid or expired, please renew it!")
+                break
 
         logger.debug("finished, tidy up")
         cleanup_archives(keep_archive_time)
