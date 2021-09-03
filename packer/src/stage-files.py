@@ -39,7 +39,6 @@ def read_config(configfile):
     # function reads config and returns object
     configuration = parser.RawConfigParser(defaults={'scriptId': 'pack', 'mongoUri': 'mongodb://localhost/',
                                                      'mongoDb': 'smallfiles', 'logLevel': 'ERROR'})
-
     try:
         if not os.path.isfile(configfile):
             raise FileNotFoundError
@@ -80,13 +79,44 @@ def read_config(configfile):
         print(f'An error occurred while reading the configuration file {configfile}, exiting now: {e}')
         raise
 
+    # Check if values are empty
+    if script_id == "":
+        print(f"script_id is empty")
+        raise ValueError("script_id is empty")
+    if configuration.get("DEFAULT", "mongo_url") == "":
+        print(f"mongo_url is empty")
+        raise ValueError("mongo_url is empty")
+    if mongo_db == "":
+        print(f"mongo_db is empty")
+        raise ValueError("mongo_db is empty")
+    if working_dir == "/stage-tmp":
+        print(f"working_dir is empty")
+        raise ValueError("working_dir is empty")
+    if configuration.get("DEFAULT", "webdav_door") == "":
+        print(f"webdav_door is empty")
+        raise ValueError("webdav_door is empty")
+    if configuration.get("DEFAULT", "frontend") == "":
+        print(f"frontend is empty")
+        raise ValueError("frontend is empty")
+    if configuration.get("DEFAULT", "macaroon") == "":
+        print(f"macaroon is empty")
+        raise ValueError("macaroon is empty")
+    if configuration.get("DEFAULT", "driver_url") == "":
+        print(f"driver_url is empty")
+        raise ValueError("driver_url is empty")
+    if keep_archive_time == "":
+        print(f"keep_archive_time is empty")
+        raise ValueError("keep_archive_time is empty")
+
     # Check if values are valid
     if any(i in script_id for i in ["/", "$", "\\00"]):
         print("script_id contains chars that are not valid")
         raise ValueError("script_id contains invalid chars like /, $ or \\00")
+
     if log_level_str.upper() not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
         print("Log level is invalid")
         raise ValueError(f"Invalid log_level {log_level_str}. Must be one of (DEBUG|INFO|WARNING|ERROR|CRITICAL)")
+
     if '.' in mongo_db:
         print("Invalid database name")
         raise ValueError("mongo_db contains an invalid charakter like '.'")
@@ -121,7 +151,7 @@ def download_archive(archive, webdav_door, frontend, macaroon, tmp_path):
 
     if response.status_code == 200:
         open(f"{working_dir}/{archive}", "wb").write(response.content)
-        logger.info(f"Downloade archive {archive} successfully")
+        logger.info(f"Download archive {archive} successfully")
         return True
     else:
         logging.error(f"Error: Downloading archive failed with code {response.status_code}")
