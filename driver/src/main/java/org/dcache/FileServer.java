@@ -28,7 +28,7 @@ public final class FileServer {
     final Server server;
     private static final Logger LOGGER = LoggerFactory.getLogger(SapphireDriver.class);
 
-    public FileServer (int port, String[] whitelist) throws GeneralSecurityException, IOException {
+    public FileServer (int port, String[] whitelist, String certfile, String keyfile) throws GeneralSecurityException, IOException {
         long maxFilesize = -1L;
         long maxRequestsize = -1L;
         int filesizeThreshold = 64*1024;
@@ -45,7 +45,7 @@ public final class FileServer {
 
         HttpConnectionFactory http11 = new HttpConnectionFactory(httpConfiguration);
         SslContextFactory sslContextFactory = new SslContextFactory.Server();
-        sslContextFactory.setSslContext(createSslContext("/etc/grid-security/hostcert.pem", "/etc/grid-security/hostkey.pem", new char[0], "/dev/null"));
+        sslContextFactory.setSslContext(createSslContext(certfile, keyfile, new char[0], "/dev/null"));
 
         SslConnectionFactory tls = new SslConnectionFactory(sslContextFactory, http11.getProtocol());
         ServerConnector connector = new ServerConnector(server, tls, http11);
