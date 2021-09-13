@@ -9,10 +9,9 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
-import java.util.Enumeration;
 
 public class FileServlet extends HttpServlet {
-    private static final Logger _log = LoggerFactory.getLogger(FileServlet.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(FileServlet.class);
 
     @Override
     public void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -50,7 +49,7 @@ public class FileServlet extends HttpServlet {
             fileIn.transferTo(outputStream);
             response.setStatus(HttpStatus.OK_200);
         } catch (IOException e) {
-            _log.error("Error while transferring file to client: ", e);
+            LOGGER.error("Error while transferring file to client: ", e);
             response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR_500);
         } finally {
             if(fileIn != null) {

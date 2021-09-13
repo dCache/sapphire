@@ -26,7 +26,7 @@ import java.util.List;
 
 public final class FileServer {
     final Server server;
-    private static final Logger _log = LoggerFactory.getLogger(SapphireDriver.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(SapphireDriver.class);
 
     public FileServer (int port, String[] whitelist) throws GeneralSecurityException, IOException {
         long maxFilesize = -1L;
@@ -73,12 +73,12 @@ public final class FileServer {
 
     public void startServer() throws Exception {
         server.start();
-        _log.info("Sapphire-server started");
+        LOGGER.info("Sapphire-server started");
     }
 
     public void stopServer() throws Exception {
         server.stop();
-        _log.info("Sapphire-server stopped");
+        LOGGER.info("Sapphire-server stopped");
     }
 
     public static SSLContext createSslContext(

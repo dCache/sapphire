@@ -18,27 +18,27 @@ import java.nio.file.*;
 
 @MultipartConfig
 public class StageServlet extends HttpServlet {
-    private static final Logger _log = LoggerFactory.getLogger(FileServlet.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(FileServlet.class);
 
     @Override
     public void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String filepath;
         AsyncContext asyncContext = request.startAsync();
 
-        _log.debug("Getting filepath");
+        LOGGER.debug("Getting filepath");
         try {
             try {
                 filepath = request.getHeader("file");
             } catch (NullPointerException e) {
                 response.setStatus(HttpStatus.BAD_REQUEST_400);
-                _log.error("No 'file' given in header.");
+                LOGGER.error("No 'file' given in header.");
                 asyncContext.complete();
                 return;
             }
 
             if (filepath.equals("")) {
                 response.setStatus(HttpStatus.BAD_REQUEST_400);
-                _log.error("'file' in header is empty.");
+                LOGGER.error("'file' in header is empty.");
                 asyncContext.complete();
                 return;
             }
@@ -46,23 +46,23 @@ public class StageServlet extends HttpServlet {
             File file = new File(filepath);
             if (file.isDirectory() || file.exists()) {
                 response.setStatus(HttpStatus.BAD_REQUEST_400);
-                _log.error("The given filepath is a directory or already exists.");
+                LOGGER.error("The given filepath is a directory or already exists.");
                 asyncContext.complete();
                 return;
             }
 
-            _log.debug("Filepath is {}", filepath);
+            LOGGER.debug("Filepath is {}", filepath);
             response.setContentType("text/plain;charset=UTF-8");
 
             ServletOutputStream out = response.getOutputStream();
 
             if (!file.createNewFile()) {
-                _log.error("File {} already exists.", filepath);
+                LOGGER.error("File {} already exists.", filepath);
                 response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR_500);
                 asyncContext.complete();
                 return;
             } else {
-                _log.info("File created {}", filepath);
+                LOGGER.info("File created {}", filepath);
             }
 
             for (Part part: request.getParts()) {
@@ -71,16 +71,16 @@ public class StageServlet extends HttpServlet {
                              StandardOpenOption.TRUNCATE_EXISTING)) {
                     IO.copy(inputStream, outputStream);
                     out.print("Saved part["+ part.getName() + "] to " + filepath);
-                    _log.debug("Saved part["+ part.getName() + "] to " + filepath);
+                    LOGGER.debug("Saved part["+ part.getName() + "] to " + filepath);
                 }
             }
 
             out.print("File successfully uploaded");
-            _log.info("File {} was successfully uploaded", filepath);
+            LOGGER.info("File {} was successfully uploaded", filepath);
             response.setStatus(HttpStatus.OK_200);
             asyncContext.complete();
         } catch (ServletException e) {
-            _log.warn("Could not get fileparts: ", e);
+            LOGGER.warn("Could not get fileparts: ", e);
             response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR_500);
             ServletOutputStream out = response.getOutputStream();
             out.print(e.toString());
