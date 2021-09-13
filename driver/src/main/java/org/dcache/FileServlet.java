@@ -15,8 +15,6 @@ public class FileServlet extends HttpServlet {
 
     @Override
     public void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        FileInputStream fileIn = null;
-        OutputStream outputStream = null;
         String filepath = "";
         AsyncContext asyncContext = request.startAsync();
 
@@ -41,10 +39,7 @@ public class FileServlet extends HttpServlet {
             return;
         }
 
-        try {
-            fileIn = new FileInputStream(file);
-            outputStream = response.getOutputStream();
-
+        try(FileInputStream fileIn = new FileInputStream(file); OutputStream outputStream = response.getOutputStream()){
             response.setContentType("application/octet-stream");
             fileIn.transferTo(outputStream);
             response.setStatus(HttpStatus.OK_200);
@@ -52,13 +47,6 @@ public class FileServlet extends HttpServlet {
             LOGGER.error("Error while transferring file to client: ", e);
             response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR_500);
         } finally {
-            if(fileIn != null) {
-                fileIn.close();
-            }
-
-            if(outputStream != null) {
-                outputStream.close();
-            }
             asyncContext.complete();
         }
     }
