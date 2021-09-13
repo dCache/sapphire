@@ -368,7 +368,7 @@ class Container:
 
         for file in self.content:
             count_try = 0
-            url = f"{driver_url}/v1"
+            url = f"{driver_url}/flush"
             headers = {"file": file["replica_uri"]}
 
             while count_try < 3:
