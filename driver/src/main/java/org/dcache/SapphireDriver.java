@@ -376,6 +376,8 @@ public class SapphireDriver implements NearlineStorage
 
         String[] whitelist = properties.getOrDefault("whitelist", "").split(",");
         String portStr = properties.getOrDefault("port", "");
+        String certfile = properties.getOrDefault("cert", "/etc/grid-security/hostcert.pem");
+        String keyfile = properties.getOrDefault("key", "/etc/grid-security/hostkey.pem");
 
         int port;
         if(portStr.contains("-")) {
@@ -389,7 +391,7 @@ public class SapphireDriver implements NearlineStorage
         LOGGER.info("Sapphire is running on port {}", port);
 
         try {
-            server = new FileServer(port, whitelist);
+            server = new FileServer(port, whitelist, certfile, keyfile);
             server.startServer();
         } catch (Exception e) {
             LOGGER.error("Could not start Jetty server", e);
