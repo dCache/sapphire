@@ -129,15 +129,12 @@ public class SapphireDriver implements NearlineStorage
         MessageDigest md = null;
         try {
             md = MessageDigest.getInstance("MD5");
-            InputStream in = new DataInputStream(new FileInputStream(file));
-            DigestInputStream din = new DigestInputStream(in, md);
-            LOGGER.debug("Value of DigestInputStream MD5: {}", din.read());
+            DigestInputStream din = new DigestInputStream(new FileInputStream(file), md);
+            LOGGER.debug("Value of DigestInputStream MD5: {}", din);
         } catch (NoSuchAlgorithmException e) {
             LOGGER.error("Could not calculate checksum MD5, ", e);
         } catch (FileNotFoundException e) {
             LOGGER.error("File not found for MD5 calculation");
-        } catch (IOException e) {
-            LOGGER.error("IOException while reading: ", e);
         }
 
         if (md == null) {
