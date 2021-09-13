@@ -10,6 +10,7 @@ import org.eclipse.jetty.server.handler.InetAccessHandler;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,14 +29,16 @@ public class FileServer {
     private static final Logger _log = LoggerFactory.getLogger(SapphireDriver.class);
 
     public FileServer (int port, String[] whitelist) throws GeneralSecurityException, IOException {
-        try {
-            _log.warn("key is file: {} ;; cert is file: {}", new File("/etc/grid-security/hostkey.pem").isFile(), new File("/etc/grid-security/hostcert.pem").isFile());
-            _log.warn("This is me: {}", System.getProperty("user.name"));
-        } catch (Exception e) {
-            _log.error("Unable to print: ", e);
-        }
+        long maxFilesize = -1L;
+        long maxRequestsize = -1L;
+        int filesizeThreshold = 64*1024;
+        int maxThreads = 100;
+        int minThreads = 10;
+        int idleTimeout = 120;
 
-        server = new Server();
+        QueuedThreadPool threadPool = new QueuedThreadPool(maxThreads, minThreads, idleTimeout);
+
+        server = new Server(threadPool);
 
         HttpConfiguration httpConfiguration = new HttpConfiguration();
         httpConfiguration.addCustomizer(new SecureRequestCustomizer());
@@ -46,23 +49,19 @@ public class FileServer {
 
         SslConnectionFactory tls = new SslConnectionFactory(sslContextFactory, http11.getProtocol());
         ServerConnector connector = new ServerConnector(server, tls, http11);
+
         connector.setPort(port);
         server.addConnector(connector);
 
-        ServletContextHandler handler = new ServletContextHandler(server, "/sapphire");
-
-        handler.addServlet(FileServlet.class, "/v1");
+        ServletContextHandler handler = new ServletContextHandler(server, "/");
 
         ServletHolder stageServletHolder = new ServletHolder(new StageServlet());
         String location = Paths.get("").toString();
-
-        long maxFilesize = -1L;
-        long maxRequestsize = -1L;
-        int filesizeThreshold = 64*1024;
-
         MultipartConfigElement multipartConfigElement = new MultipartConfigElement(location, maxFilesize, maxRequestsize, filesizeThreshold);
         stageServletHolder.getRegistration().setMultipartConfig(multipartConfigElement);
+
         handler.addServlet(stageServletHolder, "/stage");
+        handler.addServlet(FileServlet.class, "/v1");
 
         InetAccessHandler accessHandler = new InetAccessHandler();
         for(String ip : whitelist) {
