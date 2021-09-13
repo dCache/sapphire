@@ -5,6 +5,7 @@ import org.eclipse.jetty.util.IO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.servlet.AsyncContext;
 import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.annotation.MultipartConfig;
@@ -22,6 +23,8 @@ public class StageServlet extends HttpServlet {
     @Override
     public void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String filepath;
+        AsyncContext asyncContext = request.startAsync();
+
         _log.debug("Getting filepath");
         try {
             try {
@@ -29,12 +32,14 @@ public class StageServlet extends HttpServlet {
             } catch (NullPointerException e) {
                 response.setStatus(HttpStatus.BAD_REQUEST_400);
                 _log.error("No 'file' given in header.");
+                asyncContext.complete();
                 return;
             }
 
             if (filepath.equals("")) {
                 response.setStatus(HttpStatus.BAD_REQUEST_400);
                 _log.error("'file' in header is empty.");
+                asyncContext.complete();
                 return;
             }
 
@@ -42,6 +47,7 @@ public class StageServlet extends HttpServlet {
             if (file.isDirectory() || file.exists()) {
                 response.setStatus(HttpStatus.BAD_REQUEST_400);
                 _log.error("The given filepath is a directory or already exists.");
+                asyncContext.complete();
                 return;
             }
 
@@ -53,6 +59,7 @@ public class StageServlet extends HttpServlet {
             if (!file.createNewFile()) {
                 _log.error("File {} already exists.", filepath);
                 response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR_500);
+                asyncContext.complete();
                 return;
             } else {
                 _log.info("File created {}", filepath);
@@ -70,11 +77,14 @@ public class StageServlet extends HttpServlet {
 
             out.print("File successfully uploaded");
             _log.info("File {} was successfully uploaded", filepath);
+            response.setStatus(HttpStatus.OK_200);
+            asyncContext.complete();
         } catch (ServletException e) {
             _log.warn("Could not get fileparts: ", e);
             response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR_500);
             ServletOutputStream out = response.getOutputStream();
             out.print(e.toString());
+            asyncContext.complete();
         }
     }
 
