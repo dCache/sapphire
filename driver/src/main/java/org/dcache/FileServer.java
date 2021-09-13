@@ -24,8 +24,8 @@ import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.List;
 
-public class FileServer {
-    Server server;
+public final class FileServer {
+    final Server server;
     private static final Logger _log = LoggerFactory.getLogger(SapphireDriver.class);
 
     public FileServer (int port, String[] whitelist) throws GeneralSecurityException, IOException {
