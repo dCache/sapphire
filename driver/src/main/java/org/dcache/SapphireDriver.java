@@ -125,17 +125,11 @@ public class SapphireDriver implements NearlineStorage
         return new Checksum(ChecksumType.ADLER32, newChecksum.engineDigest());
     }
 
-    private Checksum calculateMd5(File file) { // TODO Needs testing
-        MessageDigest md = null;
-        try {
-            md = MessageDigest.getInstance("MD5");
-            DigestInputStream din = new DigestInputStream(new FileInputStream(file), md);
-            LOGGER.debug("Value of DigestInputStream MD5: {}", din);
-        } catch (NoSuchAlgorithmException e) {
-            LOGGER.error("Could not calculate checksum MD5, ", e);
-        } catch (FileNotFoundException e) {
-            LOGGER.error("File not found for MD5 calculation");
-        }
+    private Checksum calculateMd5(File file) throws NoSuchAlgorithmException, FileNotFoundException { // TODO Needs testing
+        MessageDigest md;
+        md = MessageDigest.getInstance("MD5");
+        DigestInputStream din = new DigestInputStream(new FileInputStream(file), md);
+        LOGGER.debug("Value of DigestInputStream MD5: {}", din);
 
         if (md == null) {
             return null;
@@ -182,7 +176,13 @@ public class SapphireDriver implements NearlineStorage
                         if (checksumType.equals(ChecksumType.ADLER32)) {
                             newChecksum = calculateAdler32(file);
                         } else if (checksumType.equals(ChecksumType.MD5_TYPE)) {
-                            newChecksum = calculateMd5(file);
+                            try {
+                                newChecksum = calculateMd5(file);
+                            } catch (FileNotFoundException e) {
+                                LOGGER.error("File {} for calculating checksum was not found!", file.getPath());
+                            } catch (NoSuchAlgorithmException e) {
+                                LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
+                            }
                         }
 
                         LOGGER.debug("New checksum: {}", newChecksum != null ? newChecksum.toString() : "null");
@@ -214,7 +214,13 @@ public class SapphireDriver implements NearlineStorage
                             "File is staged without checksum comparison!", pnfsid);
                     Set<Checksum> checksums = new HashSet<>();
                     checksums.add(calculateAdler32(file));
-                    checksums.add(calculateMd5(file));
+                    try {
+                        checksums.add(calculateMd5(file));
+                    } catch (FileNotFoundException e) {
+                        LOGGER.error("File {} was not found for calculating MD5 checksum!", file.getPath());
+                    } catch (NoSuchAlgorithmException e) {
+                        LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
+                    }
                     request.completed(checksums);
                 }
             } else if (result != null && result.get("status").equals("failure")) {
