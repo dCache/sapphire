@@ -53,7 +53,7 @@ public final class FileServer {
         connector.setPort(port);
         server.addConnector(connector);
 
-        ServletContextHandler handler = new ServletContextHandler(server, "/");
+        ServletContextHandler handler = new ServletContextHandler(server, "/v1");
 
         ServletHolder stageServletHolder = new ServletHolder(new StageServlet());
         String location = Paths.get("").toString();
@@ -61,7 +61,7 @@ public final class FileServer {
         stageServletHolder.getRegistration().setMultipartConfig(multipartConfigElement);
 
         handler.addServlet(stageServletHolder, "/stage");
-        handler.addServlet(FileServlet.class, "/v1");
+        handler.addServlet(FileServlet.class, "/flush");
 
         InetAccessHandler accessHandler = new InetAccessHandler();
         for(String ip : whitelist) {
