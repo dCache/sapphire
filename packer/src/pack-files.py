@@ -301,7 +301,7 @@ class GroupPackager:
                     try:
                         container = Container(self.archive_size, ctime_oldfile_threshold, self.verify,
                                               self.archive_path)
-                    except zipfile.BadZipFile as e:
+                    except zipfile.BadZipFile:
                         logger.error(f"Failed to create Container. Going to abort this packing run after finishing the "
                                      f"full container.")
                         container = None
