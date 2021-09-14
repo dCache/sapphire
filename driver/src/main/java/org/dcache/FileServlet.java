@@ -10,6 +10,11 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 
+/*
+ * Servlet to accept GET-Requests and return an archive to the client without
+ * producing the overhead that any dCache-door does
+ */
+
 public class FileServlet extends HttpServlet {
     private static final Logger LOGGER = LoggerFactory.getLogger(FileServlet.class);
 

@@ -24,6 +24,11 @@ import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.List;
 
+/*
+ * Jetty socket that offers different servlets for flushing and staging files
+ * for the packer-part of Sapphire
+ */
+
 public final class FileServer {
     final Server server;
     private static final Logger LOGGER = LoggerFactory.getLogger(SapphireDriver.class);
