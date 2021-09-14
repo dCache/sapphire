@@ -203,9 +203,6 @@ def main(configfile='/etc/dcache/container.conf'):
                         for archived in db.files.find({"state": f"archived: {archive['path']}"}):
                             pnfsid = archived['pnfsid']
                             reset_pnfsid(pnfsid, db)
-                            # file_result = db.files.find_one({"pnfsid": pnfsid})
-                            # file_result['state'] = "new"
-                            # db.files.replace_one({"pnfsid": pnfsid}, file_result)
                             logger.debug(f"Resetted file with PNFSID {pnfsid}")
                         db.archives.delete_one({"path": archive['path']})
                         continue
@@ -342,9 +339,6 @@ def main(configfile='/etc/dcache/container.conf'):
                                      f"again.")
                         for pnfsid in archive_pnfsidlist:
                             reset_pnfsid(pnfsid, db)
-                            # file_result = db.files.find_one({"pnfsid": pnfsid})
-                            # file_result['state'] = "new"
-                            # db.files.replace_one({"pnfsid": pnfsid}, file_result)
                             logger.debug(f"Resetted file with PNFSID {pnfsid}")
                         headers = {"Authorization": f"Bearer {macaroon}"}
                         response = requests.delete(url, headers=headers, verify=True)
