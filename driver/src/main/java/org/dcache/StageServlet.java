@@ -16,6 +16,10 @@ import javax.servlet.http.Part;
 import java.io.*;
 import java.nio.file.*;
 
+/*
+ * Servlet to accept POST-Requests for uploading files directly into dCache
+ * to complete StageRequests
+ */
 @MultipartConfig
 public class StageServlet extends HttpServlet {
     private static final Logger LOGGER = LoggerFactory.getLogger(FileServlet.class);

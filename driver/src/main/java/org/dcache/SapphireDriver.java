@@ -35,6 +35,10 @@ import org.dcache.util.FireAndForgetTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/*
+ * This class is the core of Sapphire. It handles Stage- and FlushRequests on
+ * the driver-side of Sapphire
+ */
 
 public class SapphireDriver implements NearlineStorage
 {
