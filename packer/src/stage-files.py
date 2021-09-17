@@ -47,7 +47,6 @@ def read_config(configfile):
         log_level_str = configuration.get('DEFAULT', 'log_level')
         mongo_db = configuration.get('DEFAULT', 'mongo_db')
         working_dir = configuration.get("DEFAULT", "working_dir")
-        working_dir = f"{working_dir}/stage-tmp"
         keep_archive_time = configuration.get("DEFAULT", "keep_archive_time")
     except FileNotFoundError:
         print(f'Configuration file "{configfile}" not found.')
@@ -89,9 +88,14 @@ def read_config(configfile):
     if mongo_db == "":
         print(f"mongo_db is empty")
         raise ValueError("mongo_db is empty")
-    if working_dir == "/stage-tmp":
+    if working_dir == "":
         print(f"working_dir is empty")
         raise ValueError("working_dir is empty")
+    if not os.path.exists(working_dir):
+        os.mkdir(working_dir)
+    working_dir = f"{working_dir}/stage-tmp"
+    if not os.path.exists(working_dir):
+        os.mkdir(working_dir)
     if configuration.get("DEFAULT", "webdav_door") == "":
         print(f"webdav_door is empty")
         raise ValueError("webdav_door is empty")
