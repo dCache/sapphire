@@ -475,7 +475,7 @@ class Container:
         return self.current_size >= self.archive_size
 
     def reset_mongodb_records(self):
-        mongo_db.files.update_many({"state": f"added: {self.filepath}"}, {"state": "new"})
+        mongo_db.files.update_many({"state": f"added: {self.filepath}"}, {"$set": {"state": "new"}})
 
 
 def main(configfile="/etc/dcache/container.conf"):
