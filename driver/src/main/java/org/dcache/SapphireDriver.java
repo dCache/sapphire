@@ -132,11 +132,7 @@ public class SapphireDriver implements NearlineStorage
         DigestInputStream din = new DigestInputStream(new FileInputStream(file), md);
         LOGGER.debug("Value of DigestInputStream MD5: {}", din);
 
-        if (md == null) {
-            return null;
-        } else {
-            return new Checksum(ChecksumType.MD5_TYPE, md.digest());
-        }
+        return new Checksum(ChecksumType.MD5_TYPE, md.digest());
     }
 
     private void resetFile(String pnfsid, File file) {
