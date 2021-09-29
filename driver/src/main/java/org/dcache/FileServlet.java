@@ -23,15 +23,9 @@ public class FileServlet extends HttpServlet {
         String filepath = "";
         AsyncContext asyncContext = request.startAsync();
 
-        try {
-            filepath = request.getHeader("file");
-        } catch (NullPointerException e) {
-            response.setStatus(HttpStatus.BAD_REQUEST_400);
-            asyncContext.complete();
-            return;
-        }
+        filepath = request.getHeader("file");
 
-        if(filepath.equals("")) {
+        if(filepath == null || filepath.equals("")) {
             response.setStatus(HttpStatus.BAD_REQUEST_400);
             asyncContext.complete();
             return;
