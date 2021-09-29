@@ -298,6 +298,8 @@ def main(config="/etc/dcache/container.conf"):
                         continue
                     elif download_code == 401:
                         break
+                else:
+                    download_code = 1
                 if unpack_upload_file(archive, pnfsid, request["filepath"], url, mongo_db, macaroon):
                     logger.info(f"File {pnfsid} was uploaded to dCache successfully")
                     break
@@ -306,7 +308,7 @@ def main(config="/etc/dcache/container.conf"):
 
             logger.debug(f"Download code is {download_code}")
 
-            if download_code not in (200, 401):
+            if download_code not in (200, 401, 1):
                 logger.error(f"No working location found for file {pnfsid}!")
                 try:
                     mongo_db.stage.update_one({"pnfsid": pnfsid}, {"$set": {"status": "failure"}})
