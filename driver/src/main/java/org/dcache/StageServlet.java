@@ -81,7 +81,7 @@ public class StageServlet extends HttpServlet {
 
             out.print("File successfully uploaded");
             LOGGER.info("File {} was successfully uploaded", filepath);
-            response.setStatus(HttpStatus.OK_200);
+            response.setStatus(HttpStatus.CREATED_201);
             asyncContext.complete();
         } catch (ServletException e) {
             LOGGER.warn("Could not get fileparts: ", e);

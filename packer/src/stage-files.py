@@ -182,7 +182,7 @@ def unpack_upload_file(archive, pnfsid, filepath, url, mongo_db, macaroon):
         os.utime(os.path.join(working_dir, archive),
                  times=(datetime.datetime.now().timestamp(), stat.st_mtime))  # Update access time of archive
 
-        if response.status_code == 200:
+        if response.status_code == 201:
             logger.info(f"File {pnfsid} was uploaded to dCache successfully")
             try:
                 mongo_db.stage.update_one({"pnfsid": pnfsid}, {"$set": {"status": "done"}})
