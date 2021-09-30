@@ -119,10 +119,13 @@ public class SapphireDriver implements NearlineStorage
 
     private Checksum calculateAdler32(File file) throws IOException {
         Adler32 newChecksum = new Adler32();
-
-        byte [] fileArray = FileUtils.readFileToByteArray(file);
-        newChecksum.engineUpdate(fileArray, 0, fileArray.length);
-
+        byte [] buffer = new byte[4096];
+        try (InputStream in = new FileInputStream(file)) {
+            int len;
+            while ((len = in.read(buffer)) > 0) {
+                newChecksum.update(buffer, 0, len);
+            }
+        }
         return new Checksum(ChecksumType.ADLER32, newChecksum.engineDigest());
     }
 
