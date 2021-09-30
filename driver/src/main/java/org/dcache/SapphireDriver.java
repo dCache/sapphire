@@ -250,25 +250,12 @@ public class SapphireDriver implements NearlineStorage
                 if (result == null) {
                     LOGGER.debug("Add MongoDB Record");
                     try {
-                        List<URI> locations = null;
-                        List<BsonString> bsonLocations;
-                        try {
-                            locations = request.getFileAttributes().getStorageInfo().locations();
-                            List<String> locationList = locations.stream().map(URI::toString).collect(Collectors.toList());
-                            bsonLocations = locationList.stream().map(BsonString::new).collect(Collectors.toList());
-                            LOGGER.debug("Locations for file {}: {}", pnfsid, locations.toString());
-                        } catch (IndexOutOfBoundsException e) {
-                            LOGGER.error("There are no locations available for file {}! ", pnfsid,  e);
-                            request.failed(e);
-                            continue;
-                        } catch (IllegalStateException e) {
-                            LOGGER.error("Could not get StorageInfo for file {}! ", pnfsid, e);
-                            request.failed(e);
-                            continue;
-                        }
+                        List<URI> locations = request.getFileAttributes().getStorageInfo().locations();
+                        List<String> locationList = locations.stream().map(URI::toString).collect(Collectors.toList());
+                        List<BsonString> bsonLocations = locationList.stream().map(BsonString::new).collect(Collectors.toList());
+                        LOGGER.debug("Locations for file {}: {}", pnfsid, locations);
+
                         Document record = new Document();
-
-
                         record.append("pnfsid", pnfsid)
                               .append("filepath", request.getReplicaUri().getPath())
                               .append("locations", new BsonArray(bsonLocations))
