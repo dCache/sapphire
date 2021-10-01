@@ -148,7 +148,7 @@ public class SapphireDriver implements NearlineStorage
         if (!file.delete()) {
             LOGGER.error("Could not delete file {} {}", pnfsid, file.getPath());
         }
-        stageFiles.updateOne(new Document("pnfsid", pnfsid), new Document("status", "new"));
+        stageFiles.updateOne(new Document("pnfsid", pnfsid), new Document("$set", new Document("status", "new")));
     }
 
     private void processStage() {
