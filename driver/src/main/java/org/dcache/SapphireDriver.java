@@ -5,7 +5,6 @@ import java.net.ServerSocket;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
-import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -21,7 +20,6 @@ import com.mongodb.*;
 import com.mongodb.client.*;
 import diskCacheV111.util.Adler32;
 import org.apache.commons.codec.binary.Hex;
-import org.apache.commons.io.FileUtils;
 import org.bson.BsonArray;
 import org.bson.BsonString;
 import org.bson.Document;
@@ -151,6 +149,40 @@ public class SapphireDriver implements NearlineStorage
         stageFiles.updateOne(new Document("pnfsid", pnfsid), new Document("$set", new Document("status", "new")));
     }
 
+    private Checksum compareAndReturnChecksum(Set<Checksum> originalChecksums, File file) throws FileNotFoundException{
+        for (Checksum checksum : originalChecksums) {
+            LOGGER.debug("Request checksum: {}", checksum.toString());
+
+            ChecksumType checksumType = checksum.getType();
+            Checksum newChecksum = null;
+
+            if (checksumType.equals(ChecksumType.ADLER32)) {
+                try {
+                    newChecksum = calculateAdler32(file);
+                } catch (IOException e) {
+                    LOGGER.error("Could not calculate Adler32 Checksum for file {} due to an IOException: {}",
+                            file.getPath(), e);
+                    continue;
+                }
+            } else if (checksumType.equals(ChecksumType.MD5_TYPE)) {
+                try {
+                    newChecksum = calculateMd5(file);
+                } catch (NoSuchAlgorithmException e) {
+                    LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
+                    continue;
+                }
+            }
+
+            LOGGER.debug("New checksum: {}", newChecksum != null ? newChecksum.toString() : "null");
+
+            if (newChecksum != null && newChecksum.equals(checksum)) {
+                LOGGER.debug("Checksums are equal: {} ; {}", checksum, newChecksum);
+                return newChecksum;
+            }
+        }
+        return null;
+    }
+
     private void processStage() {
         LOGGER.debug("processStage() called");
         Queue<StageRequest> notYetReady = new ArrayDeque<>();
@@ -180,47 +212,18 @@ public class SapphireDriver implements NearlineStorage
                     Set<Checksum> requestChecksums = requestChecksum.get();
                     boolean checksumFound = false;
 
-                    for (Checksum checksum : requestChecksums) {
-                        LOGGER.debug("Request checksum: {}", checksum.toString());
 
-                        ChecksumType checksumType = checksum.getType();
-                        Checksum newChecksum = null;
-
-                        if (checksumType.equals(ChecksumType.ADLER32)) {
-                            try {
-                                newChecksum = calculateAdler32(file);
-                            } catch (IOException e) {
-                                LOGGER.error("Could not calculate Adler32 Checksum for file {} due to an IOException: {}",
-                                        file.getPath(), e);
-                                continue;
-                            }
-                        } else if (checksumType.equals(ChecksumType.MD5_TYPE)) {
-                            try {
-                                newChecksum = calculateMd5(file);
-                            } catch (FileNotFoundException e) {
-                                LOGGER.error("File {} for calculating MD5 checksum was not found!", file.getPath());
-                                break;
-                            } catch (NoSuchAlgorithmException e) {
-                                LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
-                                continue;
-                            }
-                        }
-
-                        LOGGER.debug("New checksum: {}", newChecksum != null ? newChecksum.toString() : "null");
-
-                        if (newChecksum != null && newChecksum.equals(checksum)) {
-                            LOGGER.debug("Checksums are equal: {} ; {}", requestChecksum, newChecksum);
-
-                            request.completed(Collections.singleton(newChecksum));
-                            stageFiles.deleteOne(new Document("pnfsid", pnfsid));
-
-                            LOGGER.info("Stage for file {} finished successfully", pnfsid);
-                            checksumFound = true;
-                            break;
-                        } else {
-                            LOGGER.error((newChecksum == null ? "Could not calculate checksum" : "Checksums are not equal")
-                                    + " for file {}", pnfsid);
-                        }
+                    Checksum newChecksum = null;
+                    try {
+                        newChecksum = compareAndReturnChecksum(requestChecksums, file);
+                    } catch (FileNotFoundException e) {
+                        throw new RuntimeException(e);
+                    }
+                    if (newChecksum != null) {
+                        request.completed(Collections.singleton(newChecksum));
+                        stageFiles.deleteOne(new Document("pnfsid", pnfsid));
+                        LOGGER.info("Stage for file {} finished successfully", pnfsid);
+                        checksumFound = true;
                     }
                     if (!checksumFound) {
                         LOGGER.error("No checksum could be calculated or matched the original checksum. Deleting the " +
