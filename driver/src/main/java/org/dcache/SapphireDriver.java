@@ -20,6 +20,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.mongodb.*;
 import com.mongodb.client.*;
 import diskCacheV111.util.Adler32;
+import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.FileUtils;
 import org.bson.BsonArray;
 import org.bson.BsonString;
@@ -118,6 +119,7 @@ public class SapphireDriver implements NearlineStorage
     }
 
     private Checksum calculateAdler32(File file) throws IOException {
+        LOGGER.error("Adler32 Checksum calculation");
         Adler32 newChecksum = new Adler32();
         byte [] buffer = new byte[4096];
         try (InputStream in = new FileInputStream(file)) {
@@ -129,13 +131,17 @@ public class SapphireDriver implements NearlineStorage
         return new Checksum(ChecksumType.ADLER32, newChecksum.engineDigest());
     }
 
-    private Checksum calculateMd5(File file) throws NoSuchAlgorithmException, FileNotFoundException { // TODO Needs testing
+    private Checksum calculateMd5(File file) throws NoSuchAlgorithmException, FileNotFoundException {
+        LOGGER.error("MD5 Checksum calculation");
         MessageDigest md;
         md = MessageDigest.getInstance("MD5");
-        DigestInputStream din = new DigestInputStream(new FileInputStream(file), md);
-        LOGGER.debug("Value of DigestInputStream MD5: {}", din);
-
-        return new Checksum(ChecksumType.MD5_TYPE, md.digest());
+        try (FileInputStream fin = new FileInputStream(file)) {
+            md.update(fin.readAllBytes());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        String checksum = Hex.encodeHexString(md.digest());
+        return new Checksum(ChecksumType.MD5_TYPE, checksum);
     }
 
     private void resetFile(String pnfsid, File file) {
