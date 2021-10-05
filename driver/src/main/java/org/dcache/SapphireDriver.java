@@ -24,10 +24,7 @@ import org.bson.BsonArray;
 import org.bson.BsonString;
 import org.bson.Document;
 
-import org.dcache.pool.nearline.spi.FlushRequest;
-import org.dcache.pool.nearline.spi.NearlineStorage;
-import org.dcache.pool.nearline.spi.RemoveRequest;
-import org.dcache.pool.nearline.spi.StageRequest;
+import org.dcache.pool.nearline.spi.*;
 import org.dcache.util.Checksum;
 import org.dcache.util.ChecksumType;
 import org.dcache.util.FireAndForgetTask;
@@ -106,6 +103,7 @@ public class SapphireDriver implements NearlineStorage
             try {
                 stageRequest.activate().get();
                 stageRequestQueue.add(stageRequest);
+                newStageRequest(stageRequest);
                 LOGGER.debug("Added {} to stageRequestQueue", stageRequest.getFileAttributes().getPnfsId());
             } catch (ExecutionException | InterruptedException e) {
                 Throwable t = Throwables.getRootCause(e);
@@ -183,6 +181,73 @@ public class SapphireDriver implements NearlineStorage
         return null;
     }
 
+    private void stageFinished(StageRequest request, File file) {
+        Optional<Set<Checksum>> requestChecksum = request.getFileAttributes().getChecksumsIfPresent();
+        String pnfsid = request.getFileAttributes().getPnfsId().toString();
+
+        if (requestChecksum.isPresent()) {
+            Set<Checksum> requestChecksums = requestChecksum.get();
+            Checksum newChecksum;
+            try {
+                newChecksum = compareAndReturnChecksum(requestChecksums, file);
+            } catch (FileNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+
+            if (newChecksum != null) {
+                request.completed(Collections.singleton(newChecksum));
+                stageFiles.deleteOne(new Document("pnfsid", pnfsid));
+                LOGGER.info("Stage for file {} finished successfully", pnfsid);
+            } else {
+                LOGGER.error("No checksum could be calculated or matched the original checksum. Deleting the " +
+                        "file and set the MongoDB record to stage the file again!");
+                resetFile(pnfsid, file);
+            }
+        } else {
+            LOGGER.warn("There is no Checksum for file {} in dCache. " +
+                    "File is staged without checksum comparison!", pnfsid);
+            Set<Checksum> checksums = new HashSet<>();
+            try {
+                checksums.add(calculateAdler32(file));
+            } catch (IOException e) {
+                LOGGER.error("Could not calculate Adler32 Checksum of file {} due to IOException: {}",
+                        file.getPath(), e);
+            }
+            try {
+                checksums.add(calculateMd5(file));
+            } catch (FileNotFoundException e) {
+                throw new RuntimeException(e);
+            } catch (NoSuchAlgorithmException e) {
+                LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
+            }
+            request.completed(checksums);
+        }
+    }
+
+    private void newStageRequest(StageRequest request) {
+        LOGGER.debug("Add MongoDB Record");
+        String pnfsid = request.getFileAttributes().getPnfsId().toString();
+        try {
+            List<URI> locations = request.getFileAttributes().getStorageInfo().locations();
+            List<String> locationList = locations.stream().map(URI::toString).collect(Collectors.toList());
+            List<BsonString> bsonLocations = locationList.stream().map(BsonString::new).collect(Collectors.toList());
+            LOGGER.debug("Locations for file {}: {}", pnfsid, locations);
+
+            Document record = new Document();
+            record.append("pnfsid", pnfsid)
+                    .append("filepath", request.getReplicaUri().getPath())
+                    .append("locations", new BsonArray(bsonLocations))
+                    .append("status", "new");
+
+            stageFiles.insertOne(record);
+            request.allocate();
+            LOGGER.info("Start staging process for file {}", pnfsid);
+        } catch (MongoException e) {
+            LOGGER.error("Record for file {} could not be written to MongoDB", pnfsid, e);
+        }
+
+    }
+
     private void processStage() {
         LOGGER.debug("processStage() called");
         Queue<StageRequest> notYetReady = new ArrayDeque<>();
@@ -193,7 +258,7 @@ public class SapphireDriver implements NearlineStorage
         while ((request = stageRequestQueue.poll()) != null) {
             pnfsid = request.getFileAttributes().getPnfsId().toString();
             file = new File(request.getReplicaUri());
-            Document result = null;
+            Document result;
             LOGGER.debug("Found request for file {} {}", pnfsid, file.getPath());
             try {
                     FindIterable<Document> results = stageFiles.find(new Document("pnfsid", pnfsid));
@@ -206,52 +271,7 @@ public class SapphireDriver implements NearlineStorage
 
             if (result != null && result.get("status").equals("done") && file.exists()) {
                 LOGGER.debug("File {} exists", request.getFileAttributes().getPnfsId());
-                Optional<Set<Checksum>> requestChecksum = request.getFileAttributes().getChecksumsIfPresent();
-
-                if (requestChecksum.isPresent()) {
-                    Set<Checksum> requestChecksums = requestChecksum.get();
-                    boolean checksumFound = false;
-
-
-                    Checksum newChecksum = null;
-                    try {
-                        newChecksum = compareAndReturnChecksum(requestChecksums, file);
-                    } catch (FileNotFoundException e) {
-                        throw new RuntimeException(e);
-                    }
-                    if (newChecksum != null) {
-                        request.completed(Collections.singleton(newChecksum));
-                        stageFiles.deleteOne(new Document("pnfsid", pnfsid));
-                        LOGGER.info("Stage for file {} finished successfully", pnfsid);
-                        checksumFound = true;
-                    }
-                    if (!checksumFound) {
-                        LOGGER.error("No checksum could be calculated or matched the original checksum. Deleting the " +
-                                "file and set the MongoDB record to stage the file again!");
-                        resetFile(pnfsid, file);
-                    }
-                } else {
-                    LOGGER.warn("There is no Checksum for file {} in dCache. " +
-                            "File is staged without checksum comparison!", pnfsid);
-                    Set<Checksum> checksums = new HashSet<>();
-                    try {
-                        checksums.add(calculateAdler32(file));
-                    } catch (IOException e) {
-                        LOGGER.error("Could not calculate Adler32 Checksum of file {} due to IOException: {}",
-                                file.getPath(), e);
-                    }
-                    try {
-                        checksums.add(calculateMd5(file));
-                    } catch (FileNotFoundException e) {
-                        LOGGER.error("File {} was not found for calculating MD5 checksum!", file.getPath());
-                        resetFile(pnfsid, file);
-                        notYetReady.add(request);
-                        continue;
-                    } catch (NoSuchAlgorithmException e) {
-                        LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
-                    }
-                    request.completed(checksums);
-                }
+                stageFinished(request, file);
             } else if (result != null && result.get("status").equals("failure")) {
                 LOGGER.error("Staging the file failed on packer side. Please look into logs of stage-files.py on the packing node for more information!");
                 stageFiles.deleteOne(new Document("pnfsid", pnfsid));
@@ -260,25 +280,7 @@ public class SapphireDriver implements NearlineStorage
                 LOGGER.debug("File not found {}", pnfsid);
 
                 if (result == null) {
-                    LOGGER.debug("Add MongoDB Record");
-                    try {
-                        List<URI> locations = request.getFileAttributes().getStorageInfo().locations();
-                        List<String> locationList = locations.stream().map(URI::toString).collect(Collectors.toList());
-                        List<BsonString> bsonLocations = locationList.stream().map(BsonString::new).collect(Collectors.toList());
-                        LOGGER.debug("Locations for file {}: {}", pnfsid, locations);
-
-                        Document record = new Document();
-                        record.append("pnfsid", pnfsid)
-                              .append("filepath", request.getReplicaUri().getPath())
-                              .append("locations", new BsonArray(bsonLocations))
-                              .append("status", "new");
-
-                        stageFiles.insertOne(record);
-                        request.allocate();
-                        LOGGER.info("Start staging process for file {}", pnfsid);
-                    } catch (MongoException e) {
-                        LOGGER.error("Record for file {} could not be written to MongoDB", pnfsid, e);
-                    }
+                    newStageRequest(request);
                 } else {
                     LOGGER.debug("MongoDB record exists");
                 }
