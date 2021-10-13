@@ -59,14 +59,16 @@ public class StageServlet extends HttpServlet {
                 return;
             }
             LOGGER.info("File created {}", filepath);
+            String progressMessage;
 
             for (Part part: request.getParts()) {
                 try (InputStream inputStream = part.getInputStream();
                      OutputStream outputStream = Files.newOutputStream(Path.of(filepath), StandardOpenOption.CREATE,
                              StandardOpenOption.TRUNCATE_EXISTING)) {
                     IO.copy(inputStream, outputStream);
-                    out.print("Saved part["+ part.getName() + "] to " + filepath);
-                    LOGGER.debug("Saved part["+ part.getName() + "] to " + filepath);
+                    progressMessage = "Saved part["+ part.getName() + "] to " + filepath;
+                    out.print(progressMessage);
+                    LOGGER.debug(progressMessage);
                 }
             }
 
