@@ -31,18 +31,10 @@ public class StageServlet extends HttpServlet {
 
         LOGGER.debug("Getting filepath");
         try {
-            try {
-                filepath = request.getHeader("file");
-            } catch (NullPointerException e) {
-                response.setStatus(HttpStatus.BAD_REQUEST_400);
-                LOGGER.error("No 'file' given in header.");
-                asyncContext.complete();
-                return;
-            }
+            filepath = request.getHeader("file");
 
-            if (filepath.equals("")) {
+            if(filepath == null || filepath.equals("")) {
                 response.setStatus(HttpStatus.BAD_REQUEST_400);
-                LOGGER.error("'file' in header is empty.");
                 asyncContext.complete();
                 return;
             }
