@@ -131,7 +131,12 @@ public class SapphireDriver implements NearlineStorage
         LOGGER.error("MD5 Checksum calculation");
         MessageDigest md;
         md = MessageDigest.getInstance("MD5");
+        byte [] buffer = new byte[4096];
         try (FileInputStream fin = new FileInputStream(file)) {
+            int len;
+            while ((len = fin.read(buffer)) > 0) {
+                md.update(buffer, 0, len);
+            }
             md.update(fin.readAllBytes());
         } catch (IOException e) {
             e.printStackTrace();
