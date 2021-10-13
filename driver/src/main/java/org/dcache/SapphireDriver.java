@@ -154,21 +154,24 @@ public class SapphireDriver implements NearlineStorage
             ChecksumType checksumType = checksum.getType();
             Checksum newChecksum = null;
 
-            if (checksumType.equals(ChecksumType.ADLER32)) {
-                try {
-                    newChecksum = calculateAdler32(file);
-                } catch (IOException e) {
-                    LOGGER.error("Could not calculate Adler32 Checksum for file {} due to an IOException: {}",
+            switch (checksumType) {
+                case ADLER32:
+                    try {
+                        newChecksum = calculateAdler32(file);
+                    } catch (IOException e) {
+                        LOGGER.error("Could not calculate Adler32 Checksum for file {} due to an IOException: {}",
                             file.getPath(), e);
-                    continue;
-                }
-            } else if (checksumType.equals(ChecksumType.MD5_TYPE)) {
-                try {
-                    newChecksum = calculateMd5(file);
-                } catch (NoSuchAlgorithmException e) {
-                    LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
-                    continue;
-                }
+                        continue;
+                    }
+                    break;
+                case MD5_TYPE:
+                    try {
+                        newChecksum = calculateMd5(file);
+                    } catch (NoSuchAlgorithmException e) {
+                        LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
+                        continue;
+                    }
+                    break;
             }
 
             LOGGER.debug("New checksum: {}", newChecksum != null ? newChecksum.toString() : "null");
