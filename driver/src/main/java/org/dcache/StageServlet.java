@@ -57,9 +57,8 @@ public class StageServlet extends HttpServlet {
                 response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR_500);
                 asyncContext.complete();
                 return;
-            } else {
-                LOGGER.info("File created {}", filepath);
             }
+            LOGGER.info("File created {}", filepath);
 
             for (Part part: request.getParts()) {
                 try (InputStream inputStream = part.getInputStream();
