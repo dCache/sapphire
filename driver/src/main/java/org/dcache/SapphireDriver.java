@@ -208,9 +208,9 @@ public class SapphireDriver implements NearlineStorage
                 stageFiles.deleteOne(new Document("pnfsid", pnfsid));
                 LOGGER.info("Stage for file {} finished successfully", pnfsid);
             } else {
-                LOGGER.error("No checksum could be calculated or matched the original checksum. Deleting the " +
-                        "file and set the MongoDB record to stage the file again!");
-                resetFile(pnfsid, file);
+                LOGGER.error("No checksum could be calculated or matched the original checksum. Failing request!");
+                stageFiles.deleteOne(new Document("pnfsid", pnfsid));
+                request.failed(44, "Calculating checksum failed or checksums mismatched");
             }
         } else {
             LOGGER.warn("There is no Checksum for file {} in dCache. " +
