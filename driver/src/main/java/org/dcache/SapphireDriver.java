@@ -235,19 +235,25 @@ public class SapphireDriver implements NearlineStorage
     private void newStageRequest(StageRequest request) {
         LOGGER.debug("Add MongoDB Record");
         String pnfsid = request.getFileAttributes().getPnfsId().toString();
+        FindIterable<Document> results = stageFiles.find(new Document("pnfsid", pnfsid));
         try {
-            List<URI> locations = request.getFileAttributes().getStorageInfo().locations();
-            List<String> locationList = locations.stream().map(URI::toString).collect(Collectors.toList());
-            List<BsonString> bsonLocations = locationList.stream().map(BsonString::new).collect(Collectors.toList());
-            LOGGER.debug("Locations for file {}: {}", pnfsid, locations);
+            if (results.first() == null) {
+                LOGGER.debug("MongoDB record for file {} doesn't exist, will be created now", pnfsid);
+                List<URI> locations = request.getFileAttributes().getStorageInfo().locations();
+                List<String> locationList = locations.stream().map(URI::toString).collect(Collectors.toList());
+                List<BsonString> bsonLocations = locationList.stream().map(BsonString::new).collect(Collectors.toList());
+                LOGGER.debug("Locations for file {}: {}", pnfsid, locations);
 
-            Document record = new Document();
-            record.append("pnfsid", pnfsid)
-                    .append("filepath", request.getReplicaUri().getPath())
-                    .append("locations", new BsonArray(bsonLocations))
-                    .append("status", "new");
+                Document record = new Document();
+                record.append("pnfsid", pnfsid)
+                        .append("filepath", request.getReplicaUri().getPath())
+                        .append("locations", new BsonArray(bsonLocations))
+                        .append("status", "new");
 
-            stageFiles.insertOne(record);
+                stageFiles.insertOne(record);
+            } else {
+                LOGGER.debug("MongoDB Record exists already");
+            }
             request.allocate();
             LOGGER.info("Start staging process for file {}", pnfsid);
         } catch (MongoException e) {
