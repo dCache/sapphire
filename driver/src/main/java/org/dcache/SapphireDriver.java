@@ -286,9 +286,15 @@ public class SapphireDriver implements NearlineStorage
                 continue;
             }
 
-            if (result != null && result.get("status").equals("done") && file.exists()) {
-                LOGGER.debug("File {} exists", request.getFileAttributes().getPnfsId());
-                stageFinished(request, file);
+            if (result != null && result.get("status").equals("done")) {
+                if (file.exists()) {
+                    LOGGER.debug("File {} exists", request.getFileAttributes().getPnfsId());
+                    stageFinished(request, file);
+                } else {
+                    LOGGER.warn("File {} should be uploaded to dCache but was not found. Resetting MongoDB to " +
+                            "stage file again", pnfsid);
+                    resetFile(pnfsid, file);
+                }
             } else if (result != null && result.get("status").equals("failure")) {
                 LOGGER.error("Staging the file failed on packer side. Please look into logs of stage-files.py on the packing node for more information!");
                 stageFiles.deleteOne(new Document("pnfsid", pnfsid));
