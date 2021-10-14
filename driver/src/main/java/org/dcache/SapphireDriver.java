@@ -127,7 +127,7 @@ public class SapphireDriver implements NearlineStorage
         return new Checksum(ChecksumType.ADLER32, newChecksum.engineDigest());
     }
 
-    private Checksum calculateMd5(File file) throws NoSuchAlgorithmException, FileNotFoundException {
+    private Checksum calculateMd5(File file) throws NoSuchAlgorithmException, FileNotFoundException, IOException {
         LOGGER.error("MD5 Checksum calculation");
         MessageDigest md;
         md = MessageDigest.getInstance("MD5");
@@ -138,8 +138,6 @@ public class SapphireDriver implements NearlineStorage
                 md.update(buffer, 0, len);
             }
             md.update(fin.readAllBytes());
-        } catch (IOException e) {
-            e.printStackTrace();
         }
         String checksum = Hex.encodeHexString(md.digest());
         return new Checksum(ChecksumType.MD5_TYPE, checksum);
@@ -174,6 +172,9 @@ public class SapphireDriver implements NearlineStorage
                         newChecksum = calculateMd5(file);
                     } catch (NoSuchAlgorithmException e) {
                         LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
+                        continue;
+                    } catch (IOException e) {
+                        LOGGER.error("Can't calculate MD5 checksum, IOException: ", e);
                         continue;
                     }
                     break;
@@ -227,6 +228,8 @@ public class SapphireDriver implements NearlineStorage
                 throw new RuntimeException(e);
             } catch (NoSuchAlgorithmException e) {
                 LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
+            } catch (IOException e) {
+                LOGGER.error("Can't calculate MD5 checksum, IOException: ", e);
             }
             request.completed(checksums);
         }
