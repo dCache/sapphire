@@ -225,7 +225,7 @@ public class SapphireDriver implements NearlineStorage
             try {
                 checksums.add(calculateMd5(file));
             } catch (FileNotFoundException e) {
-                throw new RuntimeException(e);
+                request.failed(new RuntimeException(e));
             } catch (NoSuchAlgorithmException e) {
                 LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
             } catch (IOException e) {
