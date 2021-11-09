@@ -1,0 +1,26 @@
+default:
+        image: maven:3-openjdk-11
+stages:
+        - prepare
+        - test
+
+generate-certificates-job:
+        stage: prepare
+        script:
+                - pwd
+                - echo $CI_RUNNER_SHORT_TOKEN
+                - mkdir -p /etc/grid-security/
+                - curl --location -o /etc/grid-security/artifacts.zip "https://gitlab.desy.de/api/v4/projects/1790/jobs/artifacts/master/download?job=run"
+                - ls -la /etc/grid-security
+                - cd /etc/grid-security
+                - unzip artifacts.zip
+                - ls
+                - mv certs/hostcert.pem .
+                - mv certs/hostkey.pem .
+                - ls
+                - echo "Now building with maven"
+                - cd /builds/$CI_RUNNER_SHORT_TOKEN/0/dcache/sapphire/driver
+                - mvn clean package
+        artifacts:
+                paths:
+                        - driver/target/*.tar.gz
