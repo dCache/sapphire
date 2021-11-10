@@ -92,7 +92,7 @@ public class SapphireDriverTest {
                 "database", "hsm",
                 "period", "1",
                 "period_unit", TimeUnit.SECONDS.name(),
-                "port", "12300-12500",
+                "port", "12300",
                 "cert", certFile.getAbsolutePath(),
                 "key", keyFile.getAbsolutePath()
         );
