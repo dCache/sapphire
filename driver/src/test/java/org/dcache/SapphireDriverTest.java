@@ -92,10 +92,10 @@ public class SapphireDriverTest {
                 "database", "hsm",
                 "period", "1",
                 "period_unit", TimeUnit.SECONDS.name(),
-                "port", "12300",
                 "cert", certFile.getAbsolutePath(),
-                "key", keyFile.getAbsolutePath()
-        );
+                "key", keyFile.getAbsolutePath(),
+                "port", "12300"
+                );
 
         fileCollection = mongoClient.getDatabase("hsm").getCollection("files");
         sapphireDriver.configure(config);
