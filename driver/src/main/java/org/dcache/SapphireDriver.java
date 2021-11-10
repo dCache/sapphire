@@ -1,7 +1,6 @@
 package org.dcache;
 
 import java.io.*;
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
@@ -42,13 +41,24 @@ public class SapphireDriver implements NearlineStorage
 
     protected final String type;
     protected final String name;
+
     private MongoClient mongoClient;
+    private String mongoUri;
+    private String database;
     MongoCollection<Document> files;
     MongoCollection<Document> stageFiles;
+
     private final Queue<FlushRequest> flushRequestQueue;
     private final Queue<StageRequest> stageRequestQueue;
     private final ScheduledExecutorService executorService;
+
     private FileServer server;
+    long schedulerPeriod;
+    TimeUnit periodUnit;
+    String [] whitelist;
+    int port;
+    String certfile;
+    String keyfile;
 
     public SapphireDriver(String type, String name)
     {
@@ -56,7 +66,6 @@ public class SapphireDriver implements NearlineStorage
         this.name = name;
         flushRequestQueue = new ConcurrentLinkedDeque<>();
         stageRequestQueue = new ConcurrentLinkedDeque<>();
-
         ThreadFactory threadFactory = new ThreadFactoryBuilder()
                 .setNameFormat("sapphire-nearline-storage-%d")
                 .setUncaughtExceptionHandler(this::uncaughtException)
@@ -64,6 +73,56 @@ public class SapphireDriver implements NearlineStorage
 
         executorService = new ScheduledThreadPoolExecutor(1, threadFactory);
     }
+
+    @Override
+    public void start() {
+        LOGGER.debug("Triggered start()");
+        try{
+            mongoClient = MongoClients.create(mongoUri);
+        } catch (MongoSocketOpenException e) {
+            LOGGER.error("Could not open connection to MongoDB");
+            throw e;
+        }
+        MongoDatabase mongoDatabase = mongoClient.getDatabase(this.database);
+        files = mongoDatabase.getCollection("files");
+        stageFiles = mongoDatabase.getCollection("stage");
+
+        try {
+            server = new FileServer(port, whitelist, certfile, keyfile);
+            server.startServer();
+        } catch (Exception e) {
+            LOGGER.error("Could not start Jetty server", e);
+            throw new RuntimeException(e);
+        }
+
+        executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processFlush), schedulerPeriod, schedulerPeriod, periodUnit);
+        executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processStage), schedulerPeriod, schedulerPeriod, periodUnit);
+    }
+
+    /**
+     * Applies a new configuration.
+     *
+     * @param properties
+     * @throws IllegalArgumentException if the configuration is invalid
+     */
+    @Override
+    public void configure(Map<String, String> properties) throws IllegalArgumentException {
+        LOGGER.debug("Triggered configure()");
+
+        try {
+            this.mongoUri = properties.get("mongo_url");
+            this.database = properties.get("database");
+            this.schedulerPeriod = Long.parseLong(properties.getOrDefault("period", "1"));
+            this.periodUnit = TimeUnit.valueOf(properties.getOrDefault("period_unit", TimeUnit.MINUTES.name()));
+            this.whitelist = properties.getOrDefault("whitelist", "").split(",");
+            this.port = Integer.parseInt(properties.getOrDefault("port", ""));
+            this.certfile = properties.getOrDefault("cert", "/etc/grid-security/hostcert.pem");
+            this.keyfile = properties.getOrDefault("key", "/etc/grid-security/hostkey.pem");
+        } catch (NullPointerException e) {
+            LOGGER.error("There's a mandatory parameter missing.", e);
+        }
+    }
+
 
     /**
      * Flush all files in {@code requests} to nearline storage.
@@ -88,6 +147,7 @@ public class SapphireDriver implements NearlineStorage
         }
         LOGGER.debug("Length of flushRequestQueue: {}", flushRequestQueue.size());
     }
+
 
     /**
      * Stage all files in {@code requests} from nearline storage.
@@ -365,101 +425,6 @@ public class SapphireDriver implements NearlineStorage
     }
 
     /**
-     * Applies a new configuration.
-     *
-     * @param properties
-     * @throws IllegalArgumentException if the configuration is invalid
-     */
-    @Override
-    public void configure(Map<String, String> properties) throws IllegalArgumentException
-    {
-        LOGGER.debug("Triggered configure()");
-        String mongoUri = properties.getOrDefault("mongo_url", "");
-        String database = properties.getOrDefault("database", "");
-
-        if (mongoUri.equals("") || database.equals("")) {
-            String propertiesPath = properties.getOrDefault("conf_file", "");
-            if (propertiesPath.equals("")) {
-                throw new IllegalArgumentException("No or not enough details to MongoDB or configuration file given.");
-            } else {
-                try(InputStream inputStream = new FileInputStream(propertiesPath)){
-                    Properties prop = new Properties();
-                    try{
-                        prop.load(inputStream);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                    mongoUri = prop.getProperty("mongo_url");
-                    database = prop.getProperty("database");
-
-                } catch (FileNotFoundException e) {
-                    throw new RuntimeException("Configuration file not found");
-                } catch (IOException e) {
-                    throw new RuntimeException("Could not open and read configuration file");
-                }
-            }
-        }
-        LOGGER.debug("mongoUri: {}; database: {}", mongoUri, database);
-
-        try{
-            mongoClient = MongoClients.create(mongoUri);
-        } catch (MongoSocketOpenException e) {
-            LOGGER.error("Could not open connection to MongoDB");
-            throw e;
-        }
-        MongoDatabase mongoDatabase = mongoClient.getDatabase(database);
-        files = mongoDatabase.getCollection("files");
-        stageFiles = mongoDatabase.getCollection("stage");
-
-        long schedulerPeriod = Long.parseLong(properties.getOrDefault("period", "1"));
-        TimeUnit periodUnit = TimeUnit.valueOf(properties.getOrDefault("period_unit", TimeUnit.MINUTES.name()));
-
-        executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processFlush), schedulerPeriod, schedulerPeriod, periodUnit);
-        executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processStage), schedulerPeriod, schedulerPeriod, periodUnit);
-
-        String[] whitelist = properties.getOrDefault("whitelist", "").split(",");
-        String portStr = properties.getOrDefault("port", "");
-        String certfile = properties.getOrDefault("cert", "/etc/grid-security/hostcert.pem");
-        String keyfile = properties.getOrDefault("key", "/etc/grid-security/hostkey.pem");
-
-        int port;
-        if(portStr.contains("-")) {
-            LOGGER.debug("Port range is used");
-            port = getFreePort(Integer.parseInt(portStr.split("-")[0]),
-                    Integer.parseInt(portStr.split("-")[1]));
-        } else {
-            LOGGER.debug("Static port is used");
-            port = Integer.parseInt(portStr);
-        }
-        LOGGER.info("Sapphire is running on port {}", port);
-
-        try {
-            server = new FileServer(port, whitelist, certfile, keyfile);
-            server.startServer();
-        } catch (Exception e) {
-            LOGGER.error("Could not start Jetty server", e);
-            throw new RuntimeException(e);
-        }
-    }
-
-    private int getFreePort(int start, int end) {
-        LOGGER.debug("Trying to find free port between {} and {}", start, end);
-        int port = start;
-        while (port < end) {
-            LOGGER.debug("Trying port {}", port);
-            try {
-                new ServerSocket(port).close();
-                LOGGER.debug("Port {} is free", port);
-                return port;
-            } catch (IOException e) {
-                LOGGER.debug("Port {} is already used", port);
-                port += 1;
-            }
-        }
-        return -1;
-    }
-
-    /**
      * Cancels all requests and initiates a shutdown of the nearline storage
      * interface.
      * <p>
@@ -469,6 +434,7 @@ public class SapphireDriver implements NearlineStorage
     @Override
     public void shutdown()
     {
+        LOGGER.debug("Triggered shutdown()");
         if (mongoClient != null) {
             mongoClient.close();
         }
