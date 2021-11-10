@@ -97,6 +97,7 @@ public class SapphireDriverTest {
                 "port", "12300"
                 );
 
+
         fileCollection = mongoClient.getDatabase("hsm").getCollection("files");
         sapphireDriver.configure(config);
         sapphireDriver.start();
