@@ -99,6 +99,7 @@ public class SapphireDriverTest {
 
         fileCollection = mongoClient.getDatabase("hsm").getCollection("files");
         sapphireDriver.configure(config);
+        sapphireDriver.start();
 
         flushRequest = mock(FlushRequest.class);
         StorageInfo si = GenericStorageInfo.valueOf("A:B@C", "*");
