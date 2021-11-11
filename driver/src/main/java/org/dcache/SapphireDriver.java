@@ -402,21 +402,23 @@ public class SapphireDriver implements NearlineStorage
     public void cancel(UUID uuid)
     {
         LOGGER.debug("Cancel triggered for UUID {}", uuid);
-        Predicate<NearlineRequest> requestByUUID = request -> request.getId().equals(uuid);
+        Predicate<FlushRequest> flushByUUID = request -> request.getId().equals(uuid);
+        Predicate<StageRequest> stageByUUID = request -> request.getId().equals(uuid);
+//        Predicate<NearlineRequest> requestByUUID = request -> request.getId().equals(uuid);
 
-        flushRequestQueue.stream().filter(requestByUUID)
+        flushRequestQueue.stream().filter(flushByUUID)
                 .findAny()
                 .ifPresent(request ->  {
-                    if (flushRequestQueue.removeIf(requestByUUID)) {
+                    if (flushRequestQueue.removeIf(flushByUUID)) {
                         files.deleteOne(new Document("pnfsid", request.getFileAttributes().getPnfsId().toString()));
                         request.failed(new CancellationException());
                     }
                 });
 
-        stageRequestQueue.stream().filter(requestByUUID)
+        stageRequestQueue.stream().filter(stageByUUID)
                 .findAny()
                 .ifPresent(request -> {
-                    if (stageRequestQueue.removeIf(requestByUUID)) {
+                    if (stageRequestQueue.removeIf(stageByUUID)) {
                         stageFiles.deleteOne(new Document("pnfsid", request.getFileAttributes().getPnfsId().toString()));
                         request.failed(new CancellationException());
                     }
