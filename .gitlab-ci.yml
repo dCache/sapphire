@@ -4,22 +4,29 @@ stages:
         - prepare
         - test
 
-generate-certificates-job:
-        stage: prepare
+
+
+prepare:
+  stage: prepare
+  image: gitlab.desy.de:5555/dcache/self-signed-certs:latest
+  variables:
+    GITHUB_WORKSPACE: /etc/grid-security
+  script:
+    - mkdir ${GITHUB_WORKSPACE}
+    - ./entrypoint.sh hostcert.pem hostkey.pem ca-chain.pem
+
+  artifacts:
+    paths:
+      - ${GITHUB_WORKSPACE}
+
+
+test:
+        stage: test
         script:
                 - pwd
                 - echo $CI_RUNNER_SHORT_TOKEN
-                - mkdir -p /etc/grid-security/
-                - curl --location -o /etc/grid-security/artifacts.zip "https://gitlab.desy.de/api/v4/projects/1790/jobs/artifacts/master/download?job=run"
-                - ls -la /etc/grid-security
-                - cd /etc/grid-security
-                - unzip artifacts.zip
-                - ls
-                - mv certs/hostcert.pem .
-                - mv certs/hostkey.pem .
-                - ls
                 - echo "Now building with maven"
-                - cd /builds/$CI_RUNNER_SHORT_TOKEN/0/dcache/sapphire/driver
+                - cd driver
                 - mvn clean package
         artifacts:
                 paths:
