@@ -13,7 +13,7 @@ prepare:
     GITHUB_WORKSPACE: /etc/grid-security
   script:
     - mkdir ${GITHUB_WORKSPACE}
-    - ./entrypoint.sh hostcert.pem hostkey.pem ca-chain.pem
+    - /entrypoint.sh hostcert.pem hostkey.pem ca-chain.pem
 
   artifacts:
     paths:
