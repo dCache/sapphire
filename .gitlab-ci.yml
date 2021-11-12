@@ -4,6 +4,19 @@ stages:
         - prepare
         - test
 
+variables:
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version -DinstallAtEnd=true -DdeployAtEnd=true  -Dmaven.repo.local=.m2/repository"
+
+# Cache downloaded dependencies and plugins between builds.
+# To keep cache across branches add 'key: "$CI_JOB_NAME"'
+cache:
+  key:
+    files:
+      - pom.xml
+    prefix: "$CI_JOB_NAME"
+  paths:
+    - ./driver/.m2/repository
+
 
 
 prepare:
@@ -18,7 +31,6 @@ prepare:
   artifacts:
     paths:
       - ${GITHUB_WORKSPACE}
-
 
 test:
         stage: test
