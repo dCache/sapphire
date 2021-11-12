@@ -10,7 +10,7 @@ prepare:
   stage: prepare
   image: gitlab.desy.de:5555/dcache/self-signed-certs:latest
   variables:
-    GITHUB_WORKSPACE: /etc/grid-security
+    GITHUB_WORKSPACE: certs
   script:
     - mkdir ${GITHUB_WORKSPACE}
     - /entrypoint.sh hostcert.pem hostkey.pem ca-chain.pem
@@ -24,6 +24,9 @@ test:
         stage: test
         script:
                 - pwd
+                - mkdir -p /etc/grid-security/
+                - mv certs/hostcert.pem /etc/grid-security/.
+                - mv certs/hostkey.pem /etc/grid-security/.
                 - echo $CI_RUNNER_SHORT_TOKEN
                 - echo "Now building with maven"
                 - cd driver
