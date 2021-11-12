@@ -42,7 +42,7 @@ test:
                 - echo $CI_RUNNER_SHORT_TOKEN
                 - echo "Now building with maven"
                 - cd driver
-                - mvn clean package
+                - mvn ${MAVEN_CLI_OPTS} clean package
         artifacts:
                 paths:
                         - driver/target/*.tar.gz
