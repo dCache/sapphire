@@ -45,6 +45,7 @@ test:
                 - cd driver
                 - mvn ${MAVEN_CLI_OPTS} clean package
                 - echo "Now packing python-scripts and conf-file"
+                - cd ..
                 - mkdir packer/target
                 - tar -c -f packer/target/packer-${CI_COMMIT_TAG}.tar.gz packer/src/*.py packer/conf/container.conf
         artifacts:
