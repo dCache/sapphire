@@ -3,6 +3,7 @@ default:
 stages:
         - prepare
         - test
+        - publish
 
 variables:
   MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version -DinstallAtEnd=true -DdeployAtEnd=true  -Dmaven.repo.local=.m2/repository"
@@ -43,6 +44,18 @@ test:
                 - echo "Now building with maven"
                 - cd driver
                 - mvn ${MAVEN_CLI_OPTS} clean package
+                - echo "Now packing python-scripts and conf-file"
+                - mkdir packer/target
+                - tar -c -f packer/target/packer-${CI_COMMIT_TAG}.tar.gz packer/src/*.py packer/conf/container.conf
         artifacts:
                 paths:
                         - driver/target/*.tar.gz
+                        - packer/target/packer*.tar.gz
+publish:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "Publishing packages for version ${CI_COMMIT_TAG}"
+    - 'curl --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file packer/target/*.tar.gz "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/packer/${CI_COMMIT_TAG}/sapphire-packer-${CI_COMMIT_TAG}.tar.gz"'
+    - 'curl --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file driver/target/*.tar.gz "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/driver/${CI_COMMIT_TAG}/sapphire-driver-${CI_COMMIT_TAG}.tar.gz"'
