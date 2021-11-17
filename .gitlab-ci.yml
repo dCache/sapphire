@@ -58,6 +58,6 @@ publish:
     - if: $CI_COMMIT_TAG
   script:
     - echo "Publishing packages for version ${CI_COMMIT_TAG}"
-    - export MAJOR_RELEASE_VERSION=`echo $CI_COMMIT_TAG | cut -d . -f 1-2`
+    - export MAJOR_RELEASE_VERSION=`echo ${CI_COMMIT_TAG#"Sapphire-"} | cut -d . -f 1-2`
     - 'curl --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file packer/target/*.tar.gz "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/packer/${MAJOR_RELEASE_VERSION}/sapphire-packer-${CI_COMMIT_TAG}.tar.gz"'
     - 'curl --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file driver/target/*.tar.gz "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/driver/${MAJOR_RELEASE_VERSION}/sapphire-driver-${CI_COMMIT_TAG}.tar.gz"'
