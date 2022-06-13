@@ -20,6 +20,7 @@ import javax.net.ssl.TrustManager;
 import javax.servlet.MultipartConfigElement;
 import java.io.File;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.List;
@@ -55,6 +56,7 @@ public final class FileServer {
         SslConnectionFactory tls = new SslConnectionFactory(sslContextFactory, http11.getProtocol());
         ServerConnector connector = new ServerConnector(server, tls, http11);
 
+        connector.setHost(InetAddress.getLocalHost().getHostName());
         connector.setPort(port);
         server.addConnector(connector);
 
