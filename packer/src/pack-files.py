@@ -323,7 +323,8 @@ class GroupPackager:
                 container_list.append(container)
 
             for container in container_list:
-                container.pack()
+                if running:
+                    container.pack()
 
 
 class Container:
@@ -371,6 +372,8 @@ class Container:
         os.mkdir(self.temp_directory)
 
         for file in self.content:
+            if not running:
+                raise InterruptedError
             count_try = 0
             url = f"{driver_url}/flush"
             headers = {"file": file["replica_uri"]}
@@ -432,6 +435,10 @@ class Container:
             self.download_files()
         except requests.RequestException as e:
             logger.error(f"Abort packing container {self.name} due to failure of downloading files: {e}")
+            self.close()
+            return
+        except InterruptedError as e:
+            logger.error(f"Abort packing container {self.name} due to interruption.")
             self.close()
             return
 
