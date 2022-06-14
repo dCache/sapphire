@@ -27,6 +27,7 @@ loop_delay = -1
 logger = logging.getLogger()
 mongo_db = None
 driver_url = ""
+verify = True
 
 
 def sigint_handler(signum, frame):
@@ -48,6 +49,7 @@ def get_config(configfile):
     global script_id
     global loop_delay
     global driver_url
+    global verify
     logger.info(f"Reading configuration from file {configfile}")
     configuration = configparser.RawConfigParser(
         defaults={'script_id': 'pack', 'mongo_url': 'mongodb://localhost:27017/', 'mongo_db': 'smallfiles',
@@ -65,6 +67,8 @@ def get_config(configfile):
         working_directory = configuration.get('DEFAULT', 'working_dir')
         loop_delay = configuration.get('DEFAULT', 'loop_delay')
         driver_url = configuration.get('DEFAULT', 'driver_url')
+        if configuration.get('DEFAULT', 'verify'):
+            verify = configuration.get('DEFAULT', 'verify')
     except FileNotFoundError as e:
         logging.critical(f'Configuration file "{configfile}" not found.')
         raise
@@ -373,7 +377,7 @@ class Container:
 
             while count_try < 3:
                 try:
-                    response = requests.get(url, headers=headers)
+                    response = requests.get(url, headers=headers, verify=verify)
                     break
                 except requests.exceptions.RequestException as e:
                     if count_try < 2:

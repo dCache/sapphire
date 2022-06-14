@@ -19,6 +19,7 @@ import zipfile
 running = True
 logger = logging.getLogger()
 working_dir = ""
+verify = True
 
 
 def sigint_handler(signum, frame):
@@ -36,6 +37,7 @@ def uncaught_handler(*exc_info):
 
 def read_config(configfile):
     global working_dir
+    global verify
     # function reads config and returns object
     configuration = parser.RawConfigParser(defaults={'scriptId': 'pack', 'mongoUri': 'mongodb://localhost/',
                                                      'mongoDb': 'smallfiles', 'logLevel': 'ERROR'})
@@ -48,6 +50,8 @@ def read_config(configfile):
         mongo_db = configuration.get('DEFAULT', 'mongo_db')
         working_dir = configuration.get("DEFAULT", "working_dir")
         keep_archive_time = configuration.get("DEFAULT", "keep_archive_time")
+        if configuration.get("DEFAULT", "verify"):
+            verify = configuration.get("DEFAULT", verify)
     except FileNotFoundError:
         print(f'Configuration file "{configfile}" not found.')
         raise
@@ -133,7 +137,7 @@ def read_config(configfile):
 def get_archive_path(pnfsid, headers, frontend):
     logger.debug(f"Called get_archive_path for {pnfsid}")
     url = f"{frontend}/api/v1/id/{pnfsid}"
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, verify=verify)
     if response.status_code == 200:
         json_response = json.loads(response.content.decode("utf-8"))
         return json_response['path'], 200
@@ -152,7 +156,7 @@ def download_archive(archive, webdav_door, frontend, macaroon, tmp_path):
     elif archive_path is None:
         return 1
     url = f"{webdav_door}/{archive_path}"
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, verify=verify)
     global working_dir
 
     if response.status_code == 200:
@@ -175,7 +179,7 @@ def unpack_upload_file(archive, pnfsid, filepath, url, mongo_db, macaroon):
         data, content_type = requests.models.RequestEncodingMixin._encode_files(files, {})
         headers = {"Content-Type": content_type, "file": filepath, "Authorization": f"Bearer {macaroon}"}
 
-        response = requests.post(url, data=data, headers=headers)
+        response = requests.post(url, data=data, headers=headers, verify=verify)
         logger.debug(f"Upload status code: {response.status_code}")
 
         stat = os.stat(os.path.join(working_dir, archive))
