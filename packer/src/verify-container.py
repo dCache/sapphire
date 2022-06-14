@@ -19,7 +19,7 @@ import requests
 import base64
 
 running = True
-
+verify = True
 
 def sigint_handler(signum, frame):
     global running
@@ -68,6 +68,7 @@ def _sha1(filepath):
 
 
 def get_config(configfile):
+    global verify
     # function reads config and returns object
     configuration = parser.RawConfigParser(defaults={'scriptId': 'pack', 'mongoUri': 'mongodb://localhost/',
                                                      'mongoDb': 'smallfiles', 'logLevel': 'ERROR'})
@@ -82,6 +83,8 @@ def get_config(configfile):
         mongo_db = configuration.get('DEFAULT', 'mongo_db')
         webdav_door = configuration.get('DEFAULT', 'webdav_door')
         macaroon = configuration.get('DEFAULT', 'macaroon')
+        if configuration.get('DEFAULT', 'verify'):
+            verify = configuration.get('DEFAULT', 'verify')
     except FileNotFoundError as e:
         logging.critical(f'Configuration file "{configfile}" not found.')
         raise
@@ -239,7 +242,7 @@ def main(configfile='/etc/dcache/container.conf'):
                         # Check if file is already uploaded
                         if retry_counter == 0:
                             headers = {"Authorization": f"Bearer {macaroon}", "Want-Digest": "ADLER32,MD5,SHA1"}
-                            response = requests.head(url, verify=True, headers=headers)
+                            response = requests.head(url, verify=verify, headers=headers)
                             if response.status_code in (200, 204):
                                 checksum_type, remote_checksum = response.headers.get("Digest").split('=', 1)
                                 local_checksum = checksum_calculation[checksum_type.lower()](archive['path'])
@@ -275,7 +278,7 @@ def main(configfile='/etc/dcache/container.conf'):
                                     skip = True
                             else:
                                 try:
-                                    response = requests.put(url, data=open(archive['path'], 'rb'), verify=True, headers=headers)
+                                    response = requests.put(url, data=open(archive['path'], 'rb'), verify=verify, headers=headers)
                                 except (ConnectionError, TimeoutError, requests.exceptions.RequestException) as e:
                                     logger.error(f"An exception occured while uploading zip-file to dCache. Will retry "
                                                  f"in a few seconds: {e}")
@@ -305,7 +308,7 @@ def main(configfile='/etc/dcache/container.conf'):
                     response_status_code = 0
                     while retry_counter <= 3 and response_status_code not in (200, 201):
                         try:
-                            response = requests.head(url, verify=True, headers=headers)
+                            response = requests.head(url, verify=verify, headers=headers)
                         except Exception as e:
                             logger.error(f"An exception occured while requesting checksum and pnfsid. Will retry in a "
                                          f"few seconds: {e}")
@@ -341,7 +344,7 @@ def main(configfile='/etc/dcache/container.conf'):
                             reset_pnfsid(pnfsid, db)
                             logger.debug(f"Resetted file with PNFSID {pnfsid}")
                         headers = {"Authorization": f"Bearer {macaroon}"}
-                        response = requests.delete(url, headers=headers, verify=True)
+                        response = requests.delete(url, headers=headers, verify=verify)
                         if response.status_code == 204:
                             logger.info(f"Archive was successfully deleted from dCache.")
                         else:
@@ -378,7 +381,7 @@ def main(configfile='/etc/dcache/container.conf'):
                             f"to reupload it next run.")
                         # delete file on dCache
                         headers = {"Authorization": f"Bearer {macaroon}"}
-                        response = requests.delete(url, headers=headers, verify=True)
+                        response = requests.delete(url, headers=headers, verify=verify)
 
                         if response.status_code == 204:
                             logger.info(f"Archive was successfully deleted from dCache.")
