@@ -26,7 +26,6 @@ script_id = ""
 loop_delay = -1
 logger = logging.getLogger()
 mongo_db = None
-driver_url = ""
 verify = True
 
 
@@ -48,7 +47,6 @@ def get_config(configfile):
     global working_directory
     global script_id
     global loop_delay
-    global driver_url
     global verify
     logger.info(f"Reading configuration from file {configfile}")
     configuration = configparser.RawConfigParser(
@@ -66,9 +64,8 @@ def get_config(configfile):
         mongo_db_name = configuration.get('DEFAULT', 'mongo_db')
         working_directory = configuration.get('DEFAULT', 'working_dir')
         loop_delay = configuration.get('DEFAULT', 'loop_delay')
-        driver_url = configuration.get('DEFAULT', 'driver_url')
-        if configuration.get('DEFAULT', 'verify'):
-            verify = configuration.get('DEFAULT', 'verify')
+        if configuration.get('DEFAULT', 'loop_delay'):
+            verify = configuration.get('DEFAULT', 'loop_delay')
     except FileNotFoundError as e:
         logging.critical(f'Configuration file "{configfile}" not found.')
         raise
@@ -132,6 +129,10 @@ def get_config(configfile):
     except ValueError as e:
         logging.critical("The value of loop_delay could not be converted to int")
         raise
+
+    if not os.path.exists(f"{working_directory}/container"):
+        logger.info(f"Creating directory {working_directory}/container")
+        os.mkdir(f"{working_directory}/container")
 
     return configuration
 
@@ -367,7 +368,6 @@ class Container:
             raise
 
     def download_files(self):
-        global driver_url
         logger.info(f"Going to download files for archive {self.name} to {self.temp_directory} now.")
         os.mkdir(self.temp_directory)
 
@@ -375,7 +375,7 @@ class Container:
             if not running:
                 raise InterruptedError
             count_try = 0
-            url = f"{driver_url}/flush"
+            url = f"{file['driver_url']}/v1/flush"
             headers = {"file": file["replica_uri"]}
 
             while count_try < 3:
@@ -497,7 +497,6 @@ def main(configfile="/etc/dcache/container.conf"):
     global script_id
     global loop_delay
     global logger
-    global driver_url
 
     log_handler = None
 
@@ -527,7 +526,6 @@ def main(configfile="/etc/dcache/container.conf"):
         logger.debug(f"working_dir: {working_directory}")
         logger.debug(f"log_level: {log_level}")
         logger.debug(f"loop_delay: {loop_delay}")
-        logger.debug(f"driver_url: {driver_url}")
 
         try:
             mongo_client = MongoClient(mongo_url)

@@ -1,8 +1,10 @@
 package org.dcache;
 
 import java.io.*;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -57,6 +59,7 @@ public class SapphireDriver implements NearlineStorage
     TimeUnit periodUnit;
     String [] whitelist;
     int port;
+    String hostname;
     String certfile;
     String keyfile;
 
@@ -88,7 +91,7 @@ public class SapphireDriver implements NearlineStorage
         stageFiles = mongoDatabase.getCollection("stage");
 
         try {
-            server = new FileServer(port, whitelist, certfile, keyfile);
+            server = new FileServer(hostname, port, whitelist, certfile, keyfile);
             server.startServer();
         } catch (Exception e) {
             LOGGER.error("Could not start Jetty server", e);
@@ -118,8 +121,13 @@ public class SapphireDriver implements NearlineStorage
             this.port = Integer.parseInt(properties.getOrDefault("port", ""));
             this.certfile = properties.getOrDefault("cert", "/etc/grid-security/hostcert.pem");
             this.keyfile = properties.getOrDefault("key", "/etc/grid-security/hostkey.pem");
+            this.hostname = InetAddress.getLocalHost().getHostName();
         } catch (NullPointerException e) {
             LOGGER.error("There's a mandatory parameter missing.", e);
+        } catch (UnknownHostException e)
+        {
+            LOGGER.error("Could not get Hostname");
+            throw new RuntimeException(e);
         }
     }
 
@@ -311,7 +319,8 @@ public class SapphireDriver implements NearlineStorage
                 record.append("pnfsid", pnfsid)
                         .append("filepath", request.getReplicaUri().getPath())
                         .append("locations", new BsonArray(bsonLocations))
-                        .append("status", "new");
+                        .append("status", "new")
+                        .append("driver_url", "https://" + hostname + ":" + port);
 
                 stageFiles.insertOne(record);
             } else {
@@ -511,7 +520,8 @@ public class SapphireDriver implements NearlineStorage
                         .append("ctime", Double.parseDouble(Long.toString(request.getReplicaCreationTime())) / 1000)
                         .append("hsm_type", this.type)
                         .append("hsm_name", this.name)
-                        .append("state", "new");
+                        .append("state", "new")
+                        .append("driver_url", "https://" + hostname + ":" + port);
                 LOGGER.debug("Inserting to database: {}", entry.toJson());
                 files.insertOne(entry);
                 notYetReady.offer(request);
