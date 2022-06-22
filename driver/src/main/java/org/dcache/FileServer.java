@@ -34,7 +34,7 @@ public final class FileServer {
     final Server server;
     private static final Logger LOGGER = LoggerFactory.getLogger(SapphireDriver.class);
 
-    public FileServer (int port, String[] whitelist, String certfile, String keyfile) throws GeneralSecurityException, IOException {
+    public FileServer (String hostname, int port, String[] whitelist, String certfile, String keyfile) throws GeneralSecurityException, IOException {
         long maxFilesize = -1L;
         long maxRequestsize = -1L;
         int filesizeThreshold = 64*1024;
@@ -56,7 +56,7 @@ public final class FileServer {
         SslConnectionFactory tls = new SslConnectionFactory(sslContextFactory, http11.getProtocol());
         ServerConnector connector = new ServerConnector(server, tls, http11);
 
-        connector.setHost(InetAddress.getLocalHost().getHostName());
+        connector.setHost(hostname);
         connector.setPort(port);
         server.addConnector(connector);
 

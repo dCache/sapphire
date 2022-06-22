@@ -280,7 +280,7 @@ def main(config="/etc/dcache/container.conf"):
         if not os.path.exists(working_dir):
             os.mkdir(working_dir)
 
-        url = f"{driver_url}/stage"
+        url = f"{driver_url}/v1/stage"
         download_code = -1
         for request in results:
             if not running:
