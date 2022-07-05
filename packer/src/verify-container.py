@@ -83,8 +83,15 @@ def get_config(configfile):
         mongo_db = configuration.get('DEFAULT', 'mongo_db')
         webdav_door = configuration.get('DEFAULT', 'webdav_door')
         macaroon = configuration.get('DEFAULT', 'macaroon')
-        if configuration.get('DEFAULT', 'verify'):
-            verify = configuration.get('DEFAULT', 'verify')
+        verify_str = configuration.get('DEFAULT', 'verify')
+        if verify_str == "":
+            verify = verify
+        elif verify_str in ("False", "false"):
+            verify = False
+        elif verify_str in ("True", "true"):
+            verify = True
+        else:
+            verify = verify_str
     except FileNotFoundError as e:
         logging.critical(f'Configuration file "{configfile}" not found.')
         raise
@@ -137,6 +144,7 @@ def reset_pnfsid(pnfsid, db):
 def main(configfile='/etc/dcache/container.conf'):
     # global variables
     global running
+    global verify
 
     # general variables
     checksum_calculation = {"md5": _md5,

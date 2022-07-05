@@ -50,8 +50,15 @@ def read_config(configfile):
         mongo_db = configuration.get('DEFAULT', 'mongo_db')
         working_dir = configuration.get("DEFAULT", "working_dir")
         keep_archive_time = configuration.get("DEFAULT", "keep_archive_time")
-        if configuration.get("DEFAULT", "verify"):
-            verify = configuration.get("DEFAULT", verify)
+        verify_str = configuration.get('DEFAULT', 'verify')
+        if verify_str == "":
+            verify = verify
+        elif verify_str in ("False", "false"):
+            verify = False
+        elif verify_str in ("True", "true"):
+            verify = True
+        else:
+            verify = verify_str
     except FileNotFoundError:
         print(f'Configuration file "{configfile}" not found.')
         raise
@@ -135,6 +142,7 @@ def read_config(configfile):
 
 
 def get_archive_path(pnfsid, headers, frontend):
+    global verify
     logger.debug(f"Called get_archive_path for {pnfsid}")
     url = f"{frontend}/api/v1/id/{pnfsid}"
     response = requests.get(url, headers=headers, verify=verify)
@@ -147,6 +155,7 @@ def get_archive_path(pnfsid, headers, frontend):
 
 
 def download_archive(archive, webdav_door, frontend, macaroon, tmp_path):
+    global verify
     logger.debug(f"Called download_archive for {archive}")
     headers = {"Content-Type": "application/octet-stream",
                "Authorization": f"Bearer {macaroon}"}
@@ -174,6 +183,7 @@ def extract_archive(location):
 
 
 def unpack_upload_file(archive, pnfsid, filepath, url, mongo_db, macaroon):
+    global verify
     with zipfile.ZipFile(os.path.join(working_dir, archive)) as zip_file:
         files = {"file": (pnfsid, zip_file.read(pnfsid), "text/plain")}
         data, content_type = requests.models.RequestEncodingMixin._encode_files(files, {})

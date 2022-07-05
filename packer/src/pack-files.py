@@ -64,8 +64,15 @@ def get_config(configfile):
         mongo_db_name = configuration.get('DEFAULT', 'mongo_db')
         working_directory = configuration.get('DEFAULT', 'working_dir')
         loop_delay = configuration.get('DEFAULT', 'loop_delay')
-        if configuration.get('DEFAULT', 'loop_delay'):
-            verify = configuration.get('DEFAULT', 'loop_delay')
+        verify_str = configuration.get('DEFAULT', 'verify')
+        if verify_str == "":
+            verify = verify
+        elif verify_str in ("False", "false"):
+            verify = False
+        elif verify_str in ("True", "true"):
+            verify = True
+        else:
+            verify = verify_str
     except FileNotFoundError as e:
         logging.critical(f'Configuration file "{configfile}" not found.')
         raise
@@ -368,6 +375,7 @@ class Container:
             raise
 
     def download_files(self):
+        global verify
         logger.info(f"Going to download files for archive {self.name} to {self.temp_directory} now.")
         os.mkdir(self.temp_directory)
 
