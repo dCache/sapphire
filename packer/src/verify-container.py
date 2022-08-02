@@ -190,7 +190,7 @@ def main(configfile='/etc/dcache/container.conf'):
         try:
             client = MongoClient(mongo_uri)
             db = client[mongo_db]
-            with db.archives.find() as db_archives:
+            with db.archives.find({}, no_cursor_timeout=True).batch_size(512) as db_archives:
                 skip = False
                 logger.info(f"Found {db.archives.count_documents({})} new archives")
                 for archive in db_archives:
