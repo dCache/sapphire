@@ -62,6 +62,9 @@ public class SapphireDriver implements NearlineStorage
     String hostname;
     String certfile;
     String keyfile;
+    boolean stageQueueLocked = false;
+    boolean flushQueueLocked = false;
+    boolean cancelRequest = false;
 
     public SapphireDriver(String type, String name)
     {
@@ -335,6 +338,11 @@ public class SapphireDriver implements NearlineStorage
     }
 
     private void processStage() {
+        if (cancelRequest)
+        {
+            return;
+        }
+        stageQueueLocked = true;
         LOGGER.debug("processStage() called");
         Queue<StageRequest> notYetReady = new ArrayDeque<>();
         StageRequest request;
@@ -381,6 +389,7 @@ public class SapphireDriver implements NearlineStorage
         }
         LOGGER.debug("NotYetReady size: {} will be added to stageRequestQueue now", notYetReady.size());
         stageRequestQueue.addAll(notYetReady);
+        stageQueueLocked = false;
 
     }
 
@@ -410,6 +419,16 @@ public class SapphireDriver implements NearlineStorage
     @Override
     public void cancel(UUID uuid)
     {
+        cancelRequest = true;
+        while (stageQueueLocked || flushQueueLocked)
+        {
+            LOGGER.debug("stageQueueLocked = {};; flushQueueLocked = {}", stageQueueLocked, flushQueueLocked);
+            try {
+                TimeUnit.MILLISECONDS.sleep(100);
+            } catch (InterruptedException e) {
+                //do nothing, continue while-loop?
+            }
+        }
         LOGGER.debug("Cancel triggered for UUID {}", uuid);
         Predicate<FlushRequest> flushByUUID = request -> request.getId().equals(uuid);
         Predicate<StageRequest> stageByUUID = request -> request.getId().equals(uuid);
@@ -433,6 +452,7 @@ public class SapphireDriver implements NearlineStorage
                     }
                 });
 
+        cancelRequest = false;
     }
 
     /**
@@ -460,6 +480,11 @@ public class SapphireDriver implements NearlineStorage
     }
 
     private void processFlush() {
+        if (cancelRequest)
+        {
+            return;
+        }
+        flushQueueLocked = true;
         LOGGER.debug("processFlush() called");
         Queue<FlushRequest> notYetReady = new ArrayDeque<>();
         FlushRequest request;
@@ -529,6 +554,7 @@ public class SapphireDriver implements NearlineStorage
         }
         LOGGER.debug("NotYetReady size: {} will be added to flushRequestQueue now", notYetReady.size());
         flushRequestQueue.addAll(notYetReady);
+        flushQueueLocked = false;
     }
 
     private void uncaughtException(Thread t, Throwable e) {
