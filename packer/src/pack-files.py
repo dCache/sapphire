@@ -157,6 +157,7 @@ class Group:
         self.verify = None
         self.path_regex = None
         self.archive_path = None
+        self.quota = None
 
         self.read_config()
 
@@ -170,6 +171,7 @@ class Group:
         logger.debug(f"verify: {self.verify}")
         logger.debug(f"path_expression: {self.path_regex}")
         logger.debug(f"archive_path: {self.archive_path}")
+        logger.debug(f"quota: {self.quota}")
 
         self.create_packager()
 
@@ -184,6 +186,7 @@ class Group:
             self.verify = self.configuration.get(self.name, "verify")
             self.path_regex = re.compile(self.configuration.get(self.name, "path_expression"))
             self.archive_path = self.configuration.get(self.name, "archive_path")
+            self.quota = int(self.configuration.get(self.name, "quota"))
         except configparser.NoOptionError as e:
             logger.critical(
                 f'An option is missing in section {self.name}", exiting now: {e}')
@@ -242,7 +245,7 @@ class Group:
         for path in pathset:
             try:
                 packager = GroupPackager(path, self.file_pattern, self.store_group, self.store_name, self.archive_size,
-                                         self.min_age, self.max_age, self.verify, self.archive_path)
+                                         self.min_age, self.max_age, self.verify, self.archive_path, self.quota)
             except re.error as e:
                 logger.critical(f"Could not create GroupPackager for path {path}: {e}")
                 continue
@@ -252,7 +255,7 @@ class Group:
 
 class GroupPackager:
     def __init__(self, path, file_pattern, store_group, store_name, archive_size,
-                 min_age, max_age, verify, archive_path):
+                 min_age, max_age, verify, archive_path, quota):
         self.path = path
         self.file_pattern = file_pattern
         self.store_group = store_group
@@ -262,6 +265,7 @@ class GroupPackager:
         self.max_age = max_age
         self.verify = verify
         self.archive_path = archive_path
+        self.quota = quota
 
         try:
             self.path_pattern = re.compile(os.path.join(path, file_pattern))
@@ -308,11 +312,20 @@ class GroupPackager:
 
             container_list = []
             container = None
+            count_container = len(os.listdir(os.path.join(working_directory, "container")))
+            logger.debug(f"There are {count_container} container in {os.path.join(working_directory, 'container')}")
             for f in cursor:
                 if container is None:
                     try:
+                        if self.quota != -1 and count_container >= self.quota:
+                            logger.info(f"There are {count_container} containers in progress. That's more than quota: "
+                                        f"{self.quota}, waiting to pack more container.")
+                            break
+                        logger.debug(f"Directory size {count_container} is less than quota "
+                                     f"stuff {self.quota}")
                         container = Container(self.archive_size, ctime_oldfile_threshold, self.verify,
                                               self.archive_path)
+                        count_container += 1
                     except zipfile.BadZipFile:
                         logger.error(f"Failed to create Container. Going to abort this packing run after finishing the "
                                      f"full container.")
