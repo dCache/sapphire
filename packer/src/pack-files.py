@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # coding=utf-8
-
+import base64
 import configparser
 import logging
 import logging.handlers
 import os
+from hashlib import md5, sha1
+from zlib import adler32
+
 import pymongo.errors
 import re
 import requests
@@ -27,6 +30,8 @@ loop_delay = -1
 logger = logging.getLogger()
 mongo_db = None
 verify = True
+macaroon = ""
+webdav_door = ""
 
 
 def sigint_handler(signum, frame):
@@ -42,12 +47,47 @@ def uncaught_handler(*exc_info):
     sys.stderr.write(err_text)
 
 
+def _md5(filepath):
+    md5_value = md5()
+    with open(filepath, "rb") as file:
+        for chunk in iter(lambda: file.read(4096), b""):
+            md5_value.update(chunk)
+    return base64.b64encode(md5_value.digest()).decode()
+
+
+def _adler32(filepath):
+    blocksize = 256 * 1024 * 1024
+    adler32_value = 1
+    with open(filepath, "rb") as file:
+        while True:
+            data = file.read(blocksize)
+            if not data:
+                break
+            adler32_value = adler32(data, adler32_value)
+            if adler32_value < 0:
+                adler32_value += 2 ** 32
+    checksum = hex(adler32_value)[2:]
+    while len(checksum) < 8:
+        checksum = f"0{checksum}"
+    return checksum
+
+
+def _sha1(filepath):
+    sha1_value = sha1()
+    with open(filepath, "rb") as file:
+        for chunk in iter(lambda: file.read(4096), b""):
+            sha1_value.update(chunk)
+    return sha1_value.hexdigest()
+
+
 def get_config(configfile):
     global mongo_url
     global working_directory
     global script_id
     global loop_delay
     global verify
+    global macaroon
+    global webdav_door
     logger.info(f"Reading configuration from file {configfile}")
     configuration = configparser.RawConfigParser(
         defaults={'script_id': 'pack', 'mongo_url': 'mongodb://localhost:27017/', 'mongo_db': 'smallfiles',
@@ -65,6 +105,8 @@ def get_config(configfile):
         working_directory = configuration.get('DEFAULT', 'working_dir')
         loop_delay = configuration.get('DEFAULT', 'loop_delay')
         verify_str = configuration.get('DEFAULT', 'verify')
+        macaroon = configuration.get('DEFAULT', 'macaroon')
+        webdav_door = configuration.get('DEFAULT', 'webdav_door')
         if verify_str == "":
             verify = verify
         elif verify_str in ("False", "false"):
@@ -399,33 +441,45 @@ class Container:
             url = f"{file['driver_url']}/v1/flush"
             headers = {"file": file["replica_uri"]}
 
-            while count_try < 3:
-                try:
-                    response = requests.get(url, headers=headers, verify=verify)
-                    break
-                except requests.exceptions.RequestException as e:
-                    if count_try < 2:
-                        logger.warning(
-                            f"Error while downloading file {file['pnfsid']}, try nr. {count_try + 1}: {e}")
-                    else:
-                        logger.error(f"Downloading file {file['pnfsid']} failed 3 times. Going to abort packing this "
-                                     f"container now.")
-                        self.reset_mongodb_records()
-                        self.current_size = 0
-                        self.close()
-                        raise
+            checksum_match = 0
+            count_checksum = 0
+            while checksum_match == 0 and count_checksum < 3:
+                while count_try < 3:
+                    try:
+                        response = requests.get(url, headers=headers, verify=verify)
+                        break
+                    except requests.exceptions.RequestException as e:
+                        if count_try < 2:
+                            logger.warning(
+                                f"Error while downloading file {file['pnfsid']}, try nr. {count_try + 1}: {e}")
+                        else:
+                            logger.error(f"Downloading file {file['pnfsid']} failed 3 times. Going to abort packing this "
+                                         f"container now.")
+                            self.reset_mongodb_records()
+                            self.current_size = 0
+                            self.close()
+                            raise
 
-                count_try += 1
+                    count_try += 1
 
-            if response.status_code == 200:
-                with open(f"{self.temp_directory}/{file['pnfsid']}", "wb") as temp_file:
-                    temp_file.write(response.content)
-                    logger.debug(f"File {file['pnfsid']} successfully downloaded and written to temp-directory.")
-            else:
-                logger.error(f"Downloading file {file['pnfsid']} failed with status code {response.status_code}. "
-                             f"Abort packing this container.")
-                self.reset_mongodb_records()
-                raise requests.RequestException(f"Status code not 200, but {response.status_code}")
+                if response.status_code == 200:
+                    with open(os.path.join(self.temp_directory, file['pnfsid']), "wb") as temp_file:
+                        temp_file.write(response.content)
+                        logger.debug(f"File {file['pnfsid']} successfully downloaded and written to temp-directory.")
+                else:
+                    logger.error(f"Downloading file {file['pnfsid']} failed with status code {response.status_code}. "
+                                 f"Abort packing this container.")
+                    self.reset_mongodb_records()
+                    raise requests.RequestException(f"Status code not 200, but {response.status_code}")
+                checksum_match = self.compare_checksums(os.path.join(self.temp_directory, file['pnfsid']), file["path"])
+                if not checksum_match:
+                    logger.warning(f"Checksums of local file and file on dCache differ!")
+                    os.remove(os.path.join(self.temp_directory, file['pnfsid']))
+                    count_checksum += 1
+            if count_checksum == 3:
+                logger.error(f"Could not compare checksums for file {file['pnfsid']} after 3 attempts!")
+                mongo_db.files.update_one({"pnfsid": file['pnfsid']}, {"$set": {"state": f"download failed"}})
+                self.content.remove(file)
 
         logger.info(f"Finished downloading files to {self.temp_directory}")
 
@@ -508,6 +562,63 @@ class Container:
 
     def reset_mongodb_records(self):
         mongo_db.files.update_many({"state": f"added: {self.filepath}"}, {"$set": {"state": "new"}})
+
+    def compare_checksums(self, local_filepath, dcache_path):
+        global macaroon
+        global webdav_door
+        # Check Checksum
+        checksum_calculation = {"md5": _md5,
+                                "adler32": _adler32,
+                                "sha1": _sha1
+                                }
+
+        headers = {"Want-Digest": "ADLER32,MD5,SHA1",
+                   "Authorization": f"Bearer {macaroon}"}
+        retry_counter = 0
+        response_status_code = 0
+        url = f"{webdav_door}/{dcache_path}/"
+        logger.debug(f"compare_checksum: url: {url} ;; local path: {local_filepath} ;; dcache path: {dcache_path}")
+        while retry_counter <= 3 and response_status_code not in (200, 201):
+            try:
+                response = requests.head(url, verify=verify, headers=headers)
+            except Exception as e:
+                logger.error(f"An exception occured while requesting checksum and pnfsid. Will retry in a "
+                             f"few seconds: {e}")
+                retry_counter += 1
+                time.sleep(10)
+                continue
+            response_status_code = response.status_code
+            logger.debug(f"Requesting checksum and pnfsid finished with status code {response_status_code}")
+            if response_status_code not in (200, 201):
+                logger.warning(f"Requesting checksum and pnfsid failed as the returned status code, "
+                               f"{response_status_code}, is not 200 or 201. Retrying in a few seconds.")
+                retry_counter += 1
+                time.sleep(10)
+        if retry_counter == 4:
+            logger.critical(
+                f"Checksum and pnfsid of zip-file could not be requested from dCache, even after "
+                f"retrying {retry_counter - 1} time(s). Please check your dCache! You might need to clean up incomplete"
+                f" containers in working directory! Exiting script now...")
+            mongo_db.files.update_many({"state": {"$regex": "added: *"}}, {"$set": {"state": "new"}})
+            self.close()
+            os.remove(self.filepath)
+            sys.exit(1)
+
+        checksum_type, remote_checksum = response.headers.get("Digest").split('=', 1)
+        if str.lower(checksum_type) not in checksum_calculation.keys():
+            logger.error(f"Checksum type {checksum_type} is not implemented!")
+            raise NotImplementedError()
+        try:
+            local_checksum = checksum_calculation[checksum_type](local_filepath)
+        except FileNotFoundError as e:
+            logger.error(f"File {local_filepath} was not found!")
+
+        if remote_checksum != local_checksum:
+            logger.warning(f"Checksums for file {dcache_path} differ! local checksum: {local_checksum}, "
+                           f"remote checksum: {remote_checksum}")
+            return 0
+        else:
+            return 1
 
 
 def main(configfile="/etc/dcache/container.conf"):
