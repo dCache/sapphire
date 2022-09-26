@@ -237,7 +237,9 @@ def main(config="/etc/dcache/container.conf"):
         mongo_db_name = configuration.get('DEFAULT', 'mongo_db')
         webdav_door = configuration.get("DEFAULT", "webdav_door")
         frontend = configuration.get("DEFAULT", "frontend")
-        macaroon = configuration.get("DEFAULT", "macaroon")
+        macaroon_path = configuration.get("DEFAULT", "macaroon")
+        with open(macaroon_path, "r") as macaroon_file:
+            macaroon = macaroon_file.read().strip()
         driver_url = configuration.get("DEFAULT", "driver_url")
         log_level_str = configuration.get("DEFAULT", "log_level")
         script_id = configuration.get("DEFAULT", "script_id")
