@@ -105,7 +105,7 @@ def get_config(configfile):
         working_directory = configuration.get('DEFAULT', 'working_dir')
         loop_delay = configuration.get('DEFAULT', 'loop_delay')
         verify_str = configuration.get('DEFAULT', 'verify')
-        macaroon = configuration.get('DEFAULT', 'macaroon')
+        macaroon_path = configuration.get('DEFAULT', 'macaroon')
         webdav_door = configuration.get('DEFAULT', 'webdav_door')
         if verify_str == "":
             verify = verify
@@ -182,6 +182,15 @@ def get_config(configfile):
     if not os.path.exists(f"{working_directory}/container"):
         logger.info(f"Creating directory {working_directory}/container")
         os.mkdir(f"{working_directory}/container")
+    if not os.path.exists(macaroon_path):
+        logging.error(f"Path to macaroon doesn't exist.")
+        raise ValueError(f"Path to macaroon {macaroon_path} doesn't exist.")
+    if not os.path.isfile(macaroon_path):
+        logging.error("Macaroon is not a file")
+        raise ValueError(f"The given path to macaroon {macaroon_path} is not a file.")
+    with open(macaroon_path, "r") as macaroon_file:
+        macaroon = macaroon_file.read().strip()
+        logger.debug(f"Macaroon: {macaroon} ;;")
 
     return configuration
 

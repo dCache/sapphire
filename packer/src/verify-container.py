@@ -132,6 +132,12 @@ def get_config(configfile):
     if '.' in mongo_db:
         logging.error("Invalid database name")
         raise ValueError("mongo_db contains an invalid charakter like '.'")
+    if not os.path.exists(macaroon):
+        logging.error(f"Path to macaroon doesn't exist.")
+        raise ValueError(f"Path to macaroon {macaroon} doesn't exist.")
+    if not os.path.isfile(macaroon):
+        logging.error("Macaroon is not a file")
+        raise ValueError(f"The given path to macaroon {macaroon} is not a file.")
     return configuration
 
 
@@ -163,7 +169,9 @@ def main(configfile='/etc/dcache/container.conf'):
         mongo_uri = configuration.get('DEFAULT', 'mongo_url')
         mongo_db = configuration.get('DEFAULT', 'mongo_db')
         webdav_door = configuration.get('DEFAULT', 'webdav_door')
-        macaroon = configuration.get('DEFAULT', 'macaroon')
+        macaroon_path = configuration.get('DEFAULT', 'macaroon')
+        with open(macaroon_path, "r") as macaroon_file:
+            macaroon = macaroon_file.read().strip()
 
         log_level = getattr(logging, log_level_str.upper(), None)
         logger.setLevel(log_level)
@@ -182,6 +190,7 @@ def main(configfile='/etc/dcache/container.conf'):
         logger.debug(f"Mongo URI: {mongo_uri}")
         logger.debug(f"Mongo database: {mongo_db}")
         logger.debug(f"Webdav Door: {webdav_door}")
+        logger.debug(f"Macaroon path: {macaroon_path}")
         logger.debug(f"Macaroon: {macaroon}")
 
         logger.info(f'Successfully read configuration from file {configfile}.')
