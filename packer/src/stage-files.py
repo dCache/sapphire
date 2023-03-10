@@ -116,9 +116,6 @@ def read_config(configfile):
     if configuration.get("DEFAULT", "macaroon") == "":
         print(f"macaroon is empty")
         raise ValueError("macaroon is empty")
-    if configuration.get("DEFAULT", "driver_url") == "":
-        print(f"driver_url is empty")
-        raise ValueError("driver_url is empty")
     if keep_archive_time == "":
         print(f"keep_archive_time is empty")
         raise ValueError("keep_archive_time is empty")
@@ -239,7 +236,6 @@ def main(config="/etc/dcache/container.conf"):
         macaroon_path = configuration.get("DEFAULT", "macaroon")
         with open(macaroon_path, "r") as macaroon_file:
             macaroon = macaroon_file.read().strip()
-        driver_url = configuration.get("DEFAULT", "driver_url")
         log_level_str = configuration.get("DEFAULT", "log_level")
         script_id = configuration.get("DEFAULT", "script_id")
         keep_archive_time = configuration.get("DEFAULT", "keep_archive_time")
@@ -263,7 +259,6 @@ def main(config="/etc/dcache/container.conf"):
         logger.debug(f"Mongo database: {mongo_db_name}")
         logger.debug(f"Webdav Door: {webdav_door}")
         logger.debug(f"Macaroon: {macaroon}")
-        logger.debug(f"Driver URL: {driver_url}")
         logger.debug(f"Keep archive time: {keep_archive_time}")
 
         logger.info(f'Successfully read configuration from file {config}.')
@@ -291,7 +286,6 @@ def main(config="/etc/dcache/container.conf"):
         if not os.path.exists(working_dir):
             os.mkdir(working_dir)
 
-        url = f"{driver_url}/v1/stage"
         download_code = -1
         for request in results:
             if not running:
@@ -300,7 +294,8 @@ def main(config="/etc/dcache/container.conf"):
 
             locations = request['locations']
             pnfsid = request['pnfsid']
-            logger.debug(f"File {pnfsid}")
+            url = f"{request['driver_url']}/v1/stage"
+            logger.debug(f"File {pnfsid}, url {url}")
 
             logger.debug(f"File {pnfsid} has {len(locations)} locations.")
 
