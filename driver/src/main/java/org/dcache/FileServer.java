@@ -31,7 +31,7 @@ import java.util.List;
  */
 
 public final class FileServer {
-    final Server server;
+    private final Server server;
     private static final Logger LOGGER = LoggerFactory.getLogger(SapphireDriver.class);
 
     public FileServer (String hostname, int port, String[] whitelist, String certfile, String keyfile) throws GeneralSecurityException, IOException {

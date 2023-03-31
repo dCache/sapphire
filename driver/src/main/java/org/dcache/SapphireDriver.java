@@ -47,24 +47,24 @@ public class SapphireDriver implements NearlineStorage
     private MongoClient mongoClient;
     private String mongoUri;
     private String database;
-    MongoCollection<Document> files;
-    MongoCollection<Document> stageFiles;
+    private MongoCollection<Document> files;
+    private MongoCollection<Document> stageFiles;
 
     private final Queue<FlushRequest> flushRequestQueue;
     private final Queue<StageRequest> stageRequestQueue;
     private final ScheduledExecutorService executorService;
 
     private FileServer server;
-    long schedulerPeriod;
-    TimeUnit periodUnit;
-    String [] whitelist;
-    int port;
-    String hostname;
-    String certfile;
-    String keyfile;
-    boolean stageQueueLocked = false;
-    boolean flushQueueLocked = false;
-    boolean cancelRequest = false;
+    private long schedulerPeriod;
+    private TimeUnit periodUnit;
+    private String [] whitelist;
+    private int port;
+    private String hostname;
+    private String certfile;
+    private String keyfile;
+    private boolean stageQueueLocked = false;
+    private boolean flushQueueLocked = false;
+    private boolean cancelRequest = false;
 
     public SapphireDriver(String type, String name)
     {
