@@ -17,7 +17,6 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.mongodb.*;
 import com.mongodb.client.*;
 import diskCacheV111.util.Adler32;
-import diskCacheV111.util.CacheException;
 import org.apache.commons.codec.binary.Hex;
 import org.bson.BsonArray;
 import org.bson.BsonString;

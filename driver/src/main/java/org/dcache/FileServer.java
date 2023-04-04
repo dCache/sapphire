@@ -20,7 +20,6 @@ import javax.net.ssl.TrustManager;
 import javax.servlet.MultipartConfigElement;
 import java.io.File;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.List;
