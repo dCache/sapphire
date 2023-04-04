@@ -10,7 +10,7 @@
     <name>Combines small files to bigger files for archiving on tape</name>
 
     <properties>
-        <version.dcache>7.2.2</version.dcache>
+        <version.dcache>8.1.0</version.dcache>
         <java.version>11</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
