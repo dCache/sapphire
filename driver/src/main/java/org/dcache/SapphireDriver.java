@@ -521,7 +521,7 @@ public class SapphireDriver implements NearlineStorage
                         LOGGER.info("Location for file {} is {}", pnfsid, fileUri);
                         request.completed(Collections.singleton(fileUri));
                     } catch (URISyntaxException e) {
-                        LOGGER.error("Error completing flushRequest: " + e);
+                        LOGGER.error("Error completing flushRequest: {}", e.toString());
                         request.failed(e);
                     }
                 } else {
@@ -529,7 +529,7 @@ public class SapphireDriver implements NearlineStorage
                 }
             } else {
                 Path path = Path.of(request.getFileAttributes().getStorageInfo().getKey("path"));
-                LOGGER.debug("Path: " + path);
+                LOGGER.debug("Path: {}", path);
                 String parent;
                 try {
                     parent = path.getParent().toString();
