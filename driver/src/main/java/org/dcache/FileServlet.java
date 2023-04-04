@@ -43,7 +43,7 @@ public class FileServlet extends HttpServlet {
             fileIn.transferTo(outputStream);
             response.setStatus(HttpStatus.OK_200);
         } catch (IOException e) {
-            LOGGER.error("Error while transferring file to client: ", e);
+            LOGGER.error("Error while transferring file to client: {}", e.toString());
             response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR_500);
         } finally {
             asyncContext.complete();
