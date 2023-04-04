@@ -59,9 +59,6 @@ public class SapphireDriver implements NearlineStorage
     private String hostname;
     private String certfile;
     private String keyfile;
-    private boolean stageQueueLocked = false;
-    private boolean flushQueueLocked = false;
-    private boolean cancelRequest = false;
 
     public SapphireDriver(String type, String name)
     {
@@ -337,58 +334,54 @@ public class SapphireDriver implements NearlineStorage
     }
 
     private void processStage() {
-        if (cancelRequest)
-        {
-            return;
-        }
-        stageQueueLocked = true;
-        LOGGER.debug("processStage() called");
-        Queue<StageRequest> notYetReady = new ArrayDeque<>();
-        StageRequest request;
-        String pnfsid;
-        File file;
+        synchronized (stageRequestQueue) {
+            LOGGER.debug("processStage() called");
+            Queue<StageRequest> notYetReady = new ArrayDeque<>();
+            StageRequest request;
+            String pnfsid;
+            File file;
 
-        while ((request = stageRequestQueue.poll()) != null) {
-            pnfsid = request.getFileAttributes().getPnfsId().toString();
-            file = new File(request.getReplicaUri());
-            Document result;
-            LOGGER.debug("Found request for file {} {}", pnfsid, file.getPath());
-            try {
+            while ((request = stageRequestQueue.poll()) != null) {
+                pnfsid = request.getFileAttributes().getPnfsId().toString();
+                file = new File(request.getReplicaUri());
+                Document result;
+                LOGGER.debug("Found request for file {} {}", pnfsid, file.getPath());
+                try {
                     FindIterable<Document> results = stageFiles.find(new Document("pnfsid", pnfsid));
                     result = results.first();
-            } catch (MongoException e) {
-                LOGGER.error("An error occured while requesting MongoDB to find files to be staged: {}", e.toString());
-                notYetReady.add(request);
-                continue;
-            }
-
-            if (result != null && result.get("status").equals("done")) {
-                if (file.exists()) {
-                    LOGGER.debug("File {} exists", request.getFileAttributes().getPnfsId());
-                    stageFinished(request, file);
-                } else {
-                    LOGGER.warn("File {} should be uploaded to dCache but was not found. Resetting MongoDB to " +
-                            "stage file again", pnfsid);
-                    resetFile(pnfsid, file);
+                } catch (MongoException e) {
+                    LOGGER.error("An error occured while requesting MongoDB to find files to be staged: {}", e.toString());
+                    notYetReady.add(request);
+                    continue;
                 }
-            } else if (result != null && result.get("status").equals("failure")) {
-                LOGGER.error("Staging the file failed on packer side. Please look into logs of stage-files.py on the packing node for more information!");
-                stageFiles.deleteOne(new Document("pnfsid", pnfsid));
-                request.failed(new FileNotFoundException("Unable to stage file"));
-            } else {
-                LOGGER.debug("File not found {}", pnfsid);
 
-                if (result == null) {
-                    newStageRequest(request);
+                if (result != null && result.get("status").equals("done")) {
+                    if (file.exists()) {
+                        LOGGER.debug("File {} exists", request.getFileAttributes().getPnfsId());
+                        stageFinished(request, file);
+                    } else {
+                        LOGGER.warn("File {} should be uploaded to dCache but was not found. Resetting MongoDB to " +
+                                "stage file again", pnfsid);
+                        resetFile(pnfsid, file);
+                    }
+                } else if (result != null && result.get("status").equals("failure")) {
+                    LOGGER.error("Staging the file failed on packer side. Please look into logs of stage-files.py on the packing node for more information!");
+                    stageFiles.deleteOne(new Document("pnfsid", pnfsid));
+                    request.failed(new FileNotFoundException("Unable to stage file"));
                 } else {
-                    LOGGER.debug("MongoDB record exists");
+                    LOGGER.debug("File not found {}", pnfsid);
+
+                    if (result == null) {
+                        newStageRequest(request);
+                    } else {
+                        LOGGER.debug("MongoDB record exists");
+                    }
+                    notYetReady.add(request);
                 }
-                notYetReady.add(request);
             }
+            LOGGER.debug("NotYetReady size: {} will be added to stageRequestQueue now", notYetReady.size());
+            stageRequestQueue.addAll(notYetReady);
         }
-        LOGGER.debug("NotYetReady size: {} will be added to stageRequestQueue now", notYetReady.size());
-        stageRequestQueue.addAll(notYetReady);
-        stageQueueLocked = false;
 
     }
 
@@ -418,40 +411,32 @@ public class SapphireDriver implements NearlineStorage
     @Override
     public void cancel(UUID uuid)
     {
-        cancelRequest = true;
-        while (stageQueueLocked || flushQueueLocked)
-        {
-            LOGGER.debug("stageQueueLocked = {};; flushQueueLocked = {}", stageQueueLocked, flushQueueLocked);
-            try {
-                TimeUnit.MILLISECONDS.sleep(100);
-            } catch (InterruptedException e) {
-                //do nothing, continue while-loop?
-            }
-        }
         LOGGER.debug("Cancel triggered for UUID {}", uuid);
         Predicate<FlushRequest> flushByUUID = request -> request.getId().equals(uuid);
         Predicate<StageRequest> stageByUUID = request -> request.getId().equals(uuid);
 //        Predicate<NearlineRequest> requestByUUID = request -> request.getId().equals(uuid);
 
-        flushRequestQueue.stream().filter(flushByUUID)
-                .findAny()
-                .ifPresent(request ->  {
-                    if (flushRequestQueue.removeIf(flushByUUID)) {
-                        files.deleteOne(new Document("pnfsid", request.getFileAttributes().getPnfsId().toString()));
-                        request.failed(new CancellationException());
-                    }
-                });
+        synchronized (flushRequestQueue) {
+            flushRequestQueue.stream().filter(flushByUUID)
+                    .findAny()
+                    .ifPresent(request -> {
+                        if (flushRequestQueue.removeIf(flushByUUID)) {
+                            files.deleteOne(new Document("pnfsid", request.getFileAttributes().getPnfsId().toString()));
+                            request.failed(new CancellationException());
+                        }
+                    });
+        }
 
-        stageRequestQueue.stream().filter(stageByUUID)
-                .findAny()
-                .ifPresent(request -> {
-                    if (stageRequestQueue.removeIf(stageByUUID)) {
-                        stageFiles.deleteOne(new Document("pnfsid", request.getFileAttributes().getPnfsId().toString()));
-                        request.failed(new CancellationException());
-                    }
-                });
-
-        cancelRequest = false;
+        synchronized (stageRequestQueue) {
+            stageRequestQueue.stream().filter(stageByUUID)
+                    .findAny()
+                    .ifPresent(request -> {
+                        if (stageRequestQueue.removeIf(stageByUUID)) {
+                            stageFiles.deleteOne(new Document("pnfsid", request.getFileAttributes().getPnfsId().toString()));
+                            request.failed(new CancellationException());
+                        }
+                    });
+        }
     }
 
     /**
@@ -479,85 +464,81 @@ public class SapphireDriver implements NearlineStorage
     }
 
     private void processFlush() {
-        if (cancelRequest)
-        {
-            return;
-        }
-        flushQueueLocked = true;
-        LOGGER.debug("processFlush() called");
-        Queue<FlushRequest> notYetReady = new ArrayDeque<>();
-        FlushRequest request;
+        synchronized (flushRequestQueue) {
+            LOGGER.debug("processFlush() called");
+            Queue<FlushRequest> notYetReady = new ArrayDeque<>();
+            FlushRequest request;
 
-        while ((request = flushRequestQueue.poll()) != null) {
+            while ((request = flushRequestQueue.poll()) != null) {
 
-            String pnfsid = request.getFileAttributes().getPnfsId().toString();
-            LOGGER.debug("PNFSID: {}", pnfsid);
+                String pnfsid = request.getFileAttributes().getPnfsId().toString();
+                LOGGER.debug("PNFSID: {}", pnfsid);
 
-            if (request.getFileAttributes().getSize() == 0) {
-                LOGGER.debug("Filesize is 0");
-                String store = request.getFileAttributes().getStorageInfo().getKey("store");
-                String group = request.getFileAttributes().getStorageInfo().getKey("group");
-                try {
-                    request.completed(Collections.singleton(new URI("dcache://dcache/store=" + store +
-                            "&group=" + group + "&bfid=" + pnfsid + ":*")));
-                } catch (URISyntaxException e) {
-                    LOGGER.error("URI for 0-byte-file could not be created due to wrong syntax, pnfsid: {}", pnfsid);
-                    stageFiles.deleteOne(new Document("pnfsid", pnfsid));
-                    request.failed(44, "Syntax exception while creating URI for file");
-                }
-                continue;
-            }
-
-            FindIterable<Document> results = files.find(eq("pnfsid", pnfsid)).limit(1);
-            Document result = results.first();
-            if(result != null) {
-                LOGGER.debug("Result: {}", result.toJson());
-                if (result.containsKey("archiveUrl")) {
+                if (request.getFileAttributes().getSize() == 0) {
+                    LOGGER.debug("Filesize is 0");
+                    String store = request.getFileAttributes().getStorageInfo().getKey("store");
+                    String group = request.getFileAttributes().getStorageInfo().getKey("group");
                     try {
-                        files.deleteOne(new Document("pnfsid", pnfsid));
-                        String archiveUrl = (String) result.get("archiveUrl");
-                        URI fileUri = new URI(archiveUrl.replace("dcache://dcache", type + "://" + name));
-                        LOGGER.debug("archiveUrl exists, fileUri: {}", fileUri);
-                        LOGGER.info("Location for file {} is {}", pnfsid, fileUri);
-                        request.completed(Collections.singleton(fileUri));
+                        request.completed(Collections.singleton(new URI("dcache://dcache/store=" + store +
+                                "&group=" + group + "&bfid=" + pnfsid + ":*")));
                     } catch (URISyntaxException e) {
-                        LOGGER.error("Error completing flushRequest: {}", e.toString());
-                        request.failed(e);
+                        LOGGER.error("URI for 0-byte-file could not be created due to wrong syntax, pnfsid: {}", pnfsid);
+                        stageFiles.deleteOne(new Document("pnfsid", pnfsid));
+                        request.failed(44, "Syntax exception while creating URI for file");
+                    }
+                    continue;
+                }
+
+                FindIterable<Document> results = files.find(eq("pnfsid", pnfsid)).limit(1);
+                Document result = results.first();
+                if (result != null) {
+                    LOGGER.debug("Result: {}", result.toJson());
+                    if (result.containsKey("archiveUrl")) {
+                        try {
+                            files.deleteOne(new Document("pnfsid", pnfsid));
+                            String archiveUrl = (String) result.get("archiveUrl");
+                            URI fileUri = new URI(archiveUrl.replace("dcache://dcache", type + "://" + name));
+                            LOGGER.debug("archiveUrl exists, fileUri: {}", fileUri);
+                            LOGGER.info("Location for file {} is {}", pnfsid, fileUri);
+                            request.completed(Collections.singleton(fileUri));
+                        } catch (URISyntaxException e) {
+                            LOGGER.error("Error completing flushRequest: {}", e.toString());
+                            request.failed(e);
+                        }
+                    } else {
+                        notYetReady.offer(request);
                     }
                 } else {
+                    Path path = Path.of(request.getFileAttributes().getStorageInfo().getKey("path"));
+                    LOGGER.debug("Path: {}", path);
+                    String parent;
+
+                    if (path.equals(Path.of("/"))) {
+                        parent = path.toString();
+                    } else {
+                        parent = path.getParent().toString();
+                    }
+
+                    Document entry = new Document("pnfsid", pnfsid)
+                            .append("store", request.getFileAttributes().getStorageInfo().getKey("store"))
+                            .append("group", request.getFileAttributes().getStorageInfo().getKey("group"))
+                            .append("path", path.toString())
+                            .append("parent", parent)
+                            .append("replica_uri", request.getReplicaUri().getPath())
+                            .append("size", request.getFileAttributes().getSize())
+                            .append("ctime", Double.parseDouble(Long.toString(request.getReplicaCreationTime())) / 1000)
+                            .append("hsm_type", this.type)
+                            .append("hsm_name", this.name)
+                            .append("state", "new")
+                            .append("driver_url", "https://" + hostname + ":" + port);
+                    LOGGER.debug("Inserting to database: {}", entry.toJson());
+                    files.insertOne(entry);
                     notYetReady.offer(request);
                 }
-            } else {
-                Path path = Path.of(request.getFileAttributes().getStorageInfo().getKey("path"));
-                LOGGER.debug("Path: {}", path);
-                String parent;
-
-                if(path.equals(Path.of("/"))) {
-                    parent = path.toString();
-                } else {
-                    parent = path.getParent().toString();
-                }
-
-                Document entry = new Document("pnfsid", pnfsid)
-                        .append("store", request.getFileAttributes().getStorageInfo().getKey("store"))
-                        .append("group", request.getFileAttributes().getStorageInfo().getKey("group"))
-                        .append("path", path.toString())
-                        .append("parent", parent)
-                        .append("replica_uri", request.getReplicaUri().getPath())
-                        .append("size", request.getFileAttributes().getSize())
-                        .append("ctime", Double.parseDouble(Long.toString(request.getReplicaCreationTime())) / 1000)
-                        .append("hsm_type", this.type)
-                        .append("hsm_name", this.name)
-                        .append("state", "new")
-                        .append("driver_url", "https://" + hostname + ":" + port);
-                LOGGER.debug("Inserting to database: {}", entry.toJson());
-                files.insertOne(entry);
-                notYetReady.offer(request);
             }
+            LOGGER.debug("NotYetReady size: {} will be added to flushRequestQueue now", notYetReady.size());
+            flushRequestQueue.addAll(notYetReady);
         }
-        LOGGER.debug("NotYetReady size: {} will be added to flushRequestQueue now", notYetReady.size());
-        flushRequestQueue.addAll(notYetReady);
-        flushQueueLocked = false;
     }
 
     private void uncaughtException(Thread t, Throwable e) {
