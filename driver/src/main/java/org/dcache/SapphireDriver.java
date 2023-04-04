@@ -531,11 +531,13 @@ public class SapphireDriver implements NearlineStorage
                 Path path = Path.of(request.getFileAttributes().getStorageInfo().getKey("path"));
                 LOGGER.debug("Path: {}", path);
                 String parent;
-                try {
-                    parent = path.getParent().toString();
-                } catch (NullPointerException e) {
+
+                if(path.equals(Path.of("/"))) {
                     parent = path.toString();
+                } else {
+                    parent = path.getParent().toString();
                 }
+
                 Document entry = new Document("pnfsid", pnfsid)
                         .append("store", request.getFileAttributes().getStorageInfo().getKey("store"))
                         .append("group", request.getFileAttributes().getStorageInfo().getKey("group"))
