@@ -1,10 +1,7 @@
 package org.dcache;
 
 import java.io.*;
-import java.net.InetAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -20,6 +17,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.mongodb.*;
 import com.mongodb.client.*;
 import diskCacheV111.util.Adler32;
+import diskCacheV111.util.CacheException;
 import org.apache.commons.codec.binary.Hex;
 import org.bson.BsonArray;
 import org.bson.BsonString;
@@ -81,7 +79,7 @@ public class SapphireDriver implements NearlineStorage
     }
 
     @Override
-    public void start() {
+    public void start() throws IOException {
         LOGGER.debug("Triggered start()");
         try{
             mongoClient = MongoClients.create(mongoUri);
@@ -97,8 +95,7 @@ public class SapphireDriver implements NearlineStorage
             server = new FileServer(hostname, port, whitelist, certfile, keyfile);
             server.startServer();
         } catch (Exception e) {
-            LOGGER.error("Could not start Jetty server", e);
-            throw new RuntimeException(e);
+            throw new SocketException("Could not start Jetty server: " + e);
         }
 
         executorService.scheduleAtFixedRate(new FireAndForgetTask(this::processFlush), schedulerPeriod, schedulerPeriod, periodUnit);
@@ -126,11 +123,9 @@ public class SapphireDriver implements NearlineStorage
             this.keyfile = properties.getOrDefault("key", "/etc/grid-security/hostkey.pem");
             this.hostname = InetAddress.getLocalHost().getHostName();
         } catch (NullPointerException e) {
-            LOGGER.error("There's a mandatory parameter missing.", e);
-        } catch (UnknownHostException e)
-        {
-            LOGGER.error("Could not get Hostname");
-            throw new RuntimeException(e);
+            throw new IllegalArgumentException("There's a mandatory parameter missing. " + e);
+        } catch (UnknownHostException e) {
+            throw new IllegalArgumentException("Could not get Hostname: "+ e);
         }
     }
 
@@ -234,7 +229,7 @@ public class SapphireDriver implements NearlineStorage
                         newChecksum = calculateAdler32(file);
                     } catch (IOException e) {
                         LOGGER.error("Could not calculate Adler32 Checksum for file {} due to an IOException: {}",
-                            file.getPath(), e);
+                            file.getPath(), e.toString());
                         continue;
                     }
                     break;
@@ -245,7 +240,7 @@ public class SapphireDriver implements NearlineStorage
                         LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
                         continue;
                     } catch (IOException e) {
-                        LOGGER.error("Can't calculate MD5 checksum, IOException: ", e);
+                        LOGGER.error("Can't calculate MD5 checksum, IOException: {}", e.toString());
                         continue;
                     }
                     break;
@@ -271,7 +266,10 @@ public class SapphireDriver implements NearlineStorage
             try {
                 newChecksum = compareAndReturnChecksum(requestChecksums, file);
             } catch (FileNotFoundException e) {
-                throw new RuntimeException(e);
+                LOGGER.error("Staging finished but file was not found for checksum comparison: {}", pnfsid);
+                stageFiles.deleteOne(new Document("pnfsid", pnfsid));
+                request.failed(44, "File not found after staging finished");
+                return;
             }
 
             if (newChecksum != null) {
@@ -291,16 +289,18 @@ public class SapphireDriver implements NearlineStorage
                 checksums.add(calculateAdler32(file));
             } catch (IOException e) {
                 LOGGER.error("Could not calculate Adler32 Checksum of file {} due to IOException: {}",
-                        file.getPath(), e);
+                        file.getPath(), e.toString());
             }
             try {
                 checksums.add(calculateMd5(file));
             } catch (FileNotFoundException e) {
-                request.failed(new RuntimeException(e));
+                LOGGER.error("Staging finished but checksum calculation failed for adding it to checksums for file: {}", pnfsid);
+                stageFiles.deleteOne(new Document("pnfsid", pnfsid));
+                request.failed(44, "File not found for checksum calculation after staging finished");
             } catch (NoSuchAlgorithmException e) {
                 LOGGER.error("Can't calculate MD5 checksum, no algorithm for MD5 found");
             } catch (IOException e) {
-                LOGGER.error("Can't calculate MD5 checksum, IOException: ", e);
+                LOGGER.error("Can't calculate MD5 checksum, IOException: {}", e.toString());
             }
             request.completed(checksums);
         }
@@ -332,7 +332,7 @@ public class SapphireDriver implements NearlineStorage
             request.allocate();
             LOGGER.info("Start staging process for file {}", pnfsid);
         } catch (MongoException e) {
-            LOGGER.error("Record for file {} could not be written to MongoDB", pnfsid, e);
+            LOGGER.error("Record for file {} could not be written to MongoDB. {}", pnfsid, e.toString());
         }
 
     }
@@ -358,7 +358,7 @@ public class SapphireDriver implements NearlineStorage
                     FindIterable<Document> results = stageFiles.find(new Document("pnfsid", pnfsid));
                     result = results.first();
             } catch (MongoException e) {
-                LOGGER.error("An error occured while requesting MongoDB to find files to be staged: ", e);
+                LOGGER.error("An error occured while requesting MongoDB to find files to be staged: {}", e.toString());
                 notYetReady.add(request);
                 continue;
             }
@@ -475,7 +475,7 @@ public class SapphireDriver implements NearlineStorage
                 server.stopServer();
             }
         } catch (Exception e) {
-            LOGGER.error("Error stopping Jetty server", e);
+            LOGGER.error("Error stopping Jetty server. {}", e.toString());
         }
     }
 
@@ -501,10 +501,12 @@ public class SapphireDriver implements NearlineStorage
                 try {
                     request.completed(Collections.singleton(new URI("dcache://dcache/store=" + store +
                             "&group=" + group + "&bfid=" + pnfsid + ":*")));
-                    continue;
                 } catch (URISyntaxException e) {
-                    throw new RuntimeException("Could not create URI to complete FlushRequest with filesize 0");
+                    LOGGER.error("URI for 0-byte-file could not be created due to wrong syntax, pnfsid: {}", pnfsid);
+                    stageFiles.deleteOne(new Document("pnfsid", pnfsid));
+                    request.failed(44, "Syntax exception while creating URI for file");
                 }
+                continue;
             }
 
             FindIterable<Document> results = files.find(eq("pnfsid", pnfsid)).limit(1);
@@ -558,6 +560,6 @@ public class SapphireDriver implements NearlineStorage
     }
 
     private void uncaughtException(Thread t, Throwable e) {
-        LOGGER.error("Uncaught exception in {}", t.getName(), e);
+        LOGGER.error("Uncaught exception in {}: {}", t.getName(), e.toString());
     }
 }

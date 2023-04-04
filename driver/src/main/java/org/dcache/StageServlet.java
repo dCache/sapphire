@@ -77,7 +77,7 @@ public class StageServlet extends HttpServlet {
             response.setStatus(HttpStatus.CREATED_201);
             asyncContext.complete();
         } catch (ServletException e) {
-            LOGGER.warn("Could not get fileparts: ", e);
+            LOGGER.error("Could not get fileparts: {}", e.toString());
             response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR_500);
             ServletOutputStream out = response.getOutputStream();
             out.print(e.toString());
