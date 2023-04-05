@@ -8,6 +8,7 @@ import com.mongodb.client.MongoCollection;
 import de.bwaldvogel.mongo.MongoServer;
 import de.bwaldvogel.mongo.backend.memory.MemoryBackend;
 
+import diskCacheV111.util.Adler32;
 import diskCacheV111.vehicles.GenericStorageInfo;
 import diskCacheV111.vehicles.StorageInfo;
 import eu.emi.security.authn.x509.impl.CertificateUtils;
@@ -28,14 +29,15 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bson.BasicBSONObject;
 import org.bson.Document;
 import org.dcache.pool.nearline.spi.FlushRequest;
+import org.dcache.pool.nearline.spi.StageRequest;
+import org.dcache.util.Checksum;
+import org.dcache.util.ChecksumType;
 import org.dcache.vehicles.FileAttributes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
 import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -45,10 +47,7 @@ import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
-import java.util.Date;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 
@@ -66,12 +65,15 @@ public class SapphireDriverTest {
     private MongoServer mongoServer;
     private MongoClient mongoClient;
     private MongoCollection<Document> fileCollection;
+    private MongoCollection<Document> stageCollection;
 
     private SapphireDriver sapphireDriver;
     private FlushRequest flushRequest;
+    private StageRequest stageRequest;
 
     private File keyFile;
     private File certFile;
+    private File testfile;
 
     @BeforeEach
     public void setUp() throws IOException, GeneralSecurityException, OperatorCreationException {
@@ -98,6 +100,7 @@ public class SapphireDriverTest {
                 );
 
         fileCollection = mongoClient.getDatabase("hsm").getCollection("files");
+        stageCollection = mongoClient.getDatabase("hsm").getCollection("stage");
         sapphireDriver.configure(config);
         sapphireDriver.start();
 
@@ -114,22 +117,41 @@ public class SapphireDriverTest {
         when(flushRequest.getReplicaUri()).thenReturn(URI.create("/some/dcache/path/file1"));
         when(flushRequest.activate()).thenReturn(Futures.immediateFuture(null));
         when(flushRequest.getId()).thenReturn(UUID.fromString(REQUEST_ID));
+
+        stageRequest = mock(StageRequest.class);
+        si.addLocation(URI.create("/foo://bar/123:456"));
+
+        testfile = new File("testfile1");
+        testfile.createNewFile();
+//        Checksum checksum = calculateAdler32(testfile);
+//        Set<Checksum> checksums = new HashSet<>();
+//        checksums.add(checksum);
+
+        when(stageRequest.getFileAttributes()).thenReturn(
+                FileAttributes.of()
+                        .pnfsId(PNFS_ID)
+                        .size(123)
+                        .storageInfo(si)
+                        .build()
+        );
+        when(stageRequest.getReplicaUri()).thenReturn(URI.create("testfile1"));
+        when(stageRequest.activate()).thenReturn(Futures.immediateFuture(null));
+        when(stageRequest.getId()).thenReturn(UUID.fromString(REQUEST_ID));
     }
 
+    // Tests for FlushRequest
     @Test
-    public void shouldActiveFlushRequestOnSubmit() {
-        sapphireDriver.flush(Set.of(flushRequest));
-        verify(flushRequest).activate();
-    }
-
-    @Test
-    public void shouldPopulateDb() {
+    public void flushShouldPopulateDb() {
         sapphireDriver.flush(Set.of(flushRequest));
         waitForDriverRun(2);
 
         assertNotNull(fileCollection.find(eq("pnfsid", PNFS_ID)).first(), "mongo db is not populated");
     }
-
+    @Test
+    public void shouldActiveFlushRequestOnSubmit() {
+        sapphireDriver.flush(Set.of(flushRequest));
+        verify(flushRequest).activate();
+    }
     @Test
     public void shouldSuccessFlushWhenUrlProvided() {
         sapphireDriver.flush(Set.of(flushRequest));
@@ -159,7 +181,7 @@ public class SapphireDriverTest {
     }
 
     @Test
-    public void shouldFailOnCancelRequest() {
+    public void shouldFailFlushOnCancelRequest() {
         sapphireDriver.flush(Set.of(flushRequest));
 
         waitForDriverRun(2);
@@ -170,13 +192,89 @@ public class SapphireDriverTest {
     }
 
     @Test
-    public void shouldNotCancelForRandomID() {
+    public void shouldNotCancelFlushForRandomID() {
         sapphireDriver.flush(Set.of(flushRequest));
 
         waitForDriverRun(2);
 
         sapphireDriver.cancel(UUID.randomUUID());
-        assertNotNull(fileCollection.find(eq("pnfsid", PNFS_ID)).first(), "Should not remove when UUID doesn't match");
+        assertNotNull(fileCollection.find(eq("pnfsid", PNFS_ID)).first(), "Should not remove flushRequest when UUID doesn't match");
+    }
+
+    // Tests for StageRequests
+    @Test
+    public void stageShouldPopulateDb() {
+        sapphireDriver.stage(Set.of(stageRequest));
+        waitForDriverRun(2);
+
+        assertNotNull(stageCollection.find(eq("pnfsid", PNFS_ID)).first(), "mongo db is not populated");
+    }
+    @Test
+    public void shouldActiveStageRequestOnSubmit() {
+        sapphireDriver.stage(Set.of(stageRequest));
+        verify(stageRequest).activate();
+    }
+    @Test
+    public void shouldSuccessStageWhenStatusDoneWithChecksumProvided() throws IOException {
+        sapphireDriver.stage(Set.of(stageRequest));
+
+        Checksum checksum = calculateAdler32(testfile);
+        Set<Checksum> checksums = new HashSet<>();
+        checksums.add(checksum);
+
+        StorageInfo si = GenericStorageInfo.valueOf("A:B@C", "*");
+        si.setKey("path", "/some/dcache/path/file1");
+
+        when(stageRequest.getFileAttributes()).thenReturn(
+                FileAttributes.of()
+                        .pnfsId(PNFS_ID)
+                        .size(123)
+                        .storageInfo(si)
+                        .checksums(checksums)
+                        .build()
+        );
+
+        waitForDriverRun(2);
+
+        stageCollection.updateOne(eq("pnfsid", PNFS_ID),
+                new Document("$set", new BasicBSONObject().append("status",  "done")));
+
+        waitForDriverRun(2);
+        verify(stageRequest).completed(anySet());
+        assertNull(stageCollection.find(eq("pnfsid", PNFS_ID)).first(), "Completed entry not removed");
+    }
+    @Test
+    public void shouldSuccessStageWhenStatusDoneWithoutChecksumProvided() {
+        sapphireDriver.stage(Set.of(stageRequest));
+
+        waitForDriverRun(2);
+
+        stageCollection.updateOne(eq("pnfsid", PNFS_ID),
+                new Document("$set", new BasicBSONObject().append("status",  "done")));
+
+        waitForDriverRun(2);
+        verify(stageRequest).completed(anySet());
+        assertNull(stageCollection.find(eq("pnfsid", PNFS_ID)).first(), "Completed entry not removed");
+    }
+    @Test
+    public void shouldFailStageOnCancelRequest() {
+        sapphireDriver.stage(Set.of(stageRequest));
+
+        waitForDriverRun(2);
+
+        sapphireDriver.cancel(UUID.fromString(REQUEST_ID));
+        verify(stageRequest).failed(any(CancellationException.class));
+        assertNull(stageCollection.find(eq("pnfsid", PNFS_ID)).first(), "Canceled entry not removed");
+    }
+
+    @Test
+    public void shouldNotCancelStageForRandomID() {
+        sapphireDriver.stage(Set.of(stageRequest));
+
+        waitForDriverRun(2);
+
+        sapphireDriver.cancel(UUID.randomUUID());
+        assertNotNull(stageCollection.find(eq("pnfsid", PNFS_ID)).first(), "Should not remove stageRequest when UUID doesn't match");
     }
 
     @AfterEach
@@ -184,6 +282,7 @@ public class SapphireDriverTest {
         sapphireDriver.shutdown();
         mongoClient.close();
         mongoServer.shutdownNow();
+        testfile.delete();
     }
 
     private void waitForDriverRun(int sec) {
@@ -238,5 +337,17 @@ public class SapphireDriverTest {
             CertificateUtils.saveCertificate(certOut, cert, CertificateUtils.Encoding.PEM);
             CertificateUtils.savePrivateKey(keyOut, keyPair.getPrivate(), CertificateUtils.Encoding.PEM, null, null);
         }
+    }
+
+    private org.dcache.util.Checksum calculateAdler32(File file) throws IOException {
+        Adler32 newChecksum = new Adler32();
+        byte [] buffer = new byte[4096];
+        try (InputStream in = new FileInputStream(file)) {
+            int len;
+            while ((len = in.read(buffer)) > 0) {
+                newChecksum.update(buffer, 0, len);
+            }
+        }
+        return new Checksum(ChecksumType.ADLER32, newChecksum.engineDigest());
     }
 }
