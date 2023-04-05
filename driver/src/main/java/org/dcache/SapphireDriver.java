@@ -177,7 +177,7 @@ public class SapphireDriver implements NearlineStorage
     }
 
     private Checksum calculateAdler32(File file) throws IOException {
-        LOGGER.error("Adler32 Checksum calculation");
+        LOGGER.debug("Adler32 Checksum calculation");
         Adler32 newChecksum = new Adler32();
         byte [] buffer = new byte[4096];
         try (InputStream in = new FileInputStream(file)) {
@@ -190,7 +190,7 @@ public class SapphireDriver implements NearlineStorage
     }
 
     private Checksum calculateMd5(File file) throws NoSuchAlgorithmException, FileNotFoundException, IOException {
-        LOGGER.error("MD5 Checksum calculation");
+        LOGGER.debug("MD5 Checksum calculation");
         MessageDigest md;
         md = MessageDigest.getInstance("MD5");
         byte [] buffer = new byte[4096];
@@ -299,6 +299,7 @@ public class SapphireDriver implements NearlineStorage
                 LOGGER.error("Can't calculate MD5 checksum, IOException: {}", e.toString());
             }
             request.completed(checksums);
+            stageFiles.deleteOne(new Document("pnfsid", pnfsid));
         }
     }
 
@@ -343,7 +344,7 @@ public class SapphireDriver implements NearlineStorage
 
             while ((request = stageRequestQueue.poll()) != null) {
                 pnfsid = request.getFileAttributes().getPnfsId().toString();
-                file = new File(request.getReplicaUri());
+                file = new File(request.getReplicaUri().getPath());
                 Document result;
                 LOGGER.debug("Found request for file {} {}", pnfsid, file.getPath());
                 try {
