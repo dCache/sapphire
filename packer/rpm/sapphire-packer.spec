@@ -24,12 +24,6 @@ into bigger files for improving tape perfomance
 rm -rf $RPM_BUILD_ROOT/usr/local/bin
 rm -rf $RPM_BUILD_ROOT/etc/dcache
 
-%pre
-mkdir -p /etc/dcache
-if [ -f "/etc/dcache/container.conf" ]; then
-    mv /etc/dcache/container.conf /etc/dcache/container.conf.save
-fi;
-
 %install
 mkdir -p $RPM_BUILD_ROOT/usr/local/bin
 mkdir -p $RPM_BUILD_ROOT/etc/dcache/
@@ -44,7 +38,7 @@ ls $RPM_BUILD_ROOT/usr/local/bin
 
 %files
 %attr(0544, root, root) /usr/local/bin/*
-%attr(0664, root, root) /etc/dcache/*
+%config(noreplace) %attr(0664, root, root) /etc/dcache/*
 
 %postun
 if [ -f "/etc/dcache/container.conf.save" ]; then
