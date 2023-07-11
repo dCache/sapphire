@@ -1,31 +1,38 @@
-Summary: dCache nearline storage provider for Sapphire
-Vendor: dCache.org
-Name: Sapphire
-URL: https://dcache.org
-Packager: dCache.org <support@dcache.org>
-License: Distributable
-Group: Applications/System
+Name:           Sapphire-Driver
+Vendor:         dCache.org
+Packager:       dCache.org <support@dcache.org>
+Version:        0.3.1
+Release:        1%{?dist}
+Summary:        dCache nearline storage provider for Sapphire, driver part
 
-Version: 0.3.1
-Release: 1
-BuildArch: noarch
-Prefix: /
+License:        Distributable
+URL:            https://dcache.org
 
-AutoReqProv: no
-Requires: dcache >= 7.2.2
-%{?systemd_requires}
+Requires: dCache >= 7.2.2
 
-Source0: %{name}-%{version}-SNAPSHOT.tar.gz
+# Build with following command:
+# if source is located in SOURCES:
+#   rpmbuild --target noarch -dd sapphire-packer.spec
+# else:
+#   rpmbuild --target noarch --define '_source <Path to Sapphire source>' -bb sapphire-driver.spec
 
 %description
-dCache Nearline storage provider on dCache side for Sapphire
+The driver-part of Sapphire, a plugin for dCache used to pack small files
+into bigger files for improving tape perfomance
 
-%prep
-%setup -q -a 0 -n %{name}-%{version}-SNAPSHOT
+%build
+SOURCE_DIR=%{_source};
+if [ -z $SOURCE_DIR ]; then
+    SOURCE_DIR=$RPM_SOURCE_DIR
+fi;
+cd $SOURCE_DIR/driver
+mvn clean package
+cp $SOURCE_DIR/driver/target/Sapphire-%{version}-SNAPSHOT.tar.gz $RPM_SOURCE_DIR
 
 %install
 mkdir -p %{buildroot}%{_datadir}/dcache/plugins
-cp -a %{name}-%{version}-SNAPSHOT %{buildroot}%{_datadir}/dcache/plugins
+tar -xzvf $RPM_SOURCE_DIR/Sapphire-%{version}-SNAPSHOT.tar.gz -C $RPM_SOURCE_DIR/
+cp -r $RPM_SOURCE_DIR/Sapphire-%{version}-SNAPSHOT/ %{buildroot}%{_datadir}/dcache/plugins
 
 %post
 /usr/bin/systemctl daemon-reload >/dev/null 2>&1 ||:
@@ -34,8 +41,8 @@ cp -a %{name}-%{version}-SNAPSHOT %{buildroot}%{_datadir}/dcache/plugins
 /usr/bin/systemctl daemon-reload >/dev/null 2>&1 ||:
 
 %files
-%defattr(-,root,root,-)
-%{_datadir}
+/usr/share/dcache/plugins/Sapphire-%{version}-SNAPSHOT/*
+
 
 %changelog
 * Wed Dec 07 2022 Svenja Meyer <svenja.meyer@desy.de>
