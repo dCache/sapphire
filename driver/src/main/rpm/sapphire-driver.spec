@@ -8,7 +8,7 @@ Summary:        dCache nearline storage provider for Sapphire, driver part
 License:        Distributable
 URL:            https://dcache.org
 
-Requires: dCache >= 7.2.2
+Requires: dcache >= 7.2.2
 
 # Build with following command:
 # if source is located in SOURCES:
