@@ -26,18 +26,23 @@ rm -rf $RPM_BUILD_ROOT/etc/dcache
 
 %install
 mkdir -p $RPM_BUILD_ROOT/usr/local/bin
+mkdir -p $RPM_BUILD_ROOT/etc/systemd/system
 mkdir -p $RPM_BUILD_ROOT/etc/dcache/
 SOURCE_DIR=%{_source};
 if [ -z $SOURCE_DIR ]; then
     SOURCE_DIR=$RPM_SOURCE_DIR
 fi;
 cp $SOURCE_DIR/packer/src/* $RPM_BUILD_ROOT/usr/local/bin
+cp $SOURCE_DIR/packer/service/* $RPM_BUILD_ROOT/etc/systemd/system
 cp $SOURCE_DIR/packer/conf/container.conf $RPM_BUILD_ROOT/etc/dcache/container.conf
 ls $RPM_BUILD_ROOT/usr/local/bin
 
 
 %files
 %attr(0544, root, root) /usr/local/bin/*
+%attr(0644, root, root) /etc/systemd/system/pack-files.service
+%attr(0644, root, root) /etc/systemd/system/verify-container.service
+%attr(0644, root, root) /etc/systemd/system/stage-files.service
 %config(noreplace) %attr(0664, root, root) /etc/dcache/*
 
 %postun
