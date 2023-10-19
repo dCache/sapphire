@@ -1,0 +1,10 @@
+[Unit]
+Description=Service to run verify-container as part of Sapphire-packer
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/verify-container.py
+
+[Install]
+WantedBy=multi-user.target
