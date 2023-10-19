@@ -1,0 +1,10 @@
+[Unit]
+Description=Service to run pack files as part of Sapphire-packer
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/bin/sapphire/pack-files.py
+
+[Install]
+WantedBy=multi-user.target
