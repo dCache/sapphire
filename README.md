@@ -53,6 +53,9 @@ permission to be executed with `chmod +x`. Also, put `container.conf` from `pack
 to `/etc/dcache`. It's possible to have the file in another directory, you'll find more
 information in the `Start section` of this documentation.
 
+To use systemd to run the script, the files in `packer/service` needs to be placed to
+`/etc/systemd/system`. Afterward, it is necessary to run `systemctl daemon-reload`.
+
 ----------------
 
 ## 3. Preparation and Configuration
@@ -94,7 +97,7 @@ https://dcache.org/old/manuals/Book-5.0/config-hsm.shtml#configuring-pools-to-in
 ## 3. Start
 
 ### Packer:
-
+#### Manual start
 To run the scripts in background, the following commands can be used as root:
 ```
 nohup /usr/local/bin/pack-files.py > /tmp/pack-files.log &
@@ -103,6 +106,13 @@ nohup /usr/local/bin/stage-files.py > /tmp/stage-files.log &
 ```
 If the configuration file is not `/etc/dcache/container.conf`, the correct path with the
 filename has to be given as a parameter to the scripts.
+
+#### Systemd
+First, it's important to know that it's not possible to use a configuration file other
+than `/etc/dcache/container.conf` when running the scripts with systemd.
+
+Start the scripts with `systemctl start pack-files.service`,
+`systemctl start verify-container.service` and `systemctl start stage-files.service`.
 
 ### Driver:
 
