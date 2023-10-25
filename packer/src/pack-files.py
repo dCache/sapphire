@@ -29,6 +29,7 @@ script_id = ""
 loop_delay = -1
 logger = logging.getLogger()
 mongo_db = None
+session = None
 verify = True
 macaroon = ""
 webdav_door = ""
@@ -350,7 +351,7 @@ class GroupPackager:
             'group': self.store_group,
             'store': self.store_name,
             'ctime': {'$lt': ctime_threshold}},
-                no_cursor_timeout=True, allow_disk_use=True).batch_size(512) as cursor:
+                no_cursor_timeout=True, allow_disk_use=True, session=session).batch_size(512) as cursor:
             filecount = mongo_db.files.count_documents({
                 'state': 'new',
                 'path': self.path_pattern,
@@ -634,6 +635,7 @@ def main(configfile="/etc/dcache/container.conf"):
     global running
     global mongo_url
     global mongo_db
+    global session
     global working_directory
     global script_id
     global loop_delay
@@ -670,6 +672,7 @@ def main(configfile="/etc/dcache/container.conf"):
 
         try:
             mongo_client = MongoClient(mongo_url)
+            session = mongo_client.start_session()
             mongo_db = mongo_client[mongo_db_name]
             logger.info("Established connection to MongoDB")
 

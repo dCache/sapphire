@@ -265,10 +265,11 @@ def main(config="/etc/dcache/container.conf"):
 
         try:
             client = MongoClient(mongo_uri)
+            session = client.start_session()
             mongo_db = client[mongo_db_name]
 
             results = mongo_db.stage.find({"status": "new"}, no_cursor_timeout=True,
-                                          allow_disk_use=True, batch_size=1024)
+                                          allow_disk_use=True, batch_size=1024, session=session)
             length_results = mongo_db.stage.count_documents({"status": "new"})
         except (pymongo.errors.ConnectionFailure, pymongo.errors.InvalidURI, pymongo.errors.InvalidName,
                 pymongo.errors.ServerSelectionTimeoutError) as e:

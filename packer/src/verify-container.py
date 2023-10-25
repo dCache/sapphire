@@ -198,8 +198,9 @@ def main(configfile='/etc/dcache/container.conf'):
         # Connect to database and get archives
         try:
             client = MongoClient(mongo_uri)
+            session = client.start_session()
             db = client[mongo_db]
-            with db.archives.find({}, no_cursor_timeout=True).batch_size(512) as db_archives:
+            with db.archives.find({}, no_cursor_timeout=True, session=session).batch_size(512) as db_archives:
                 skip = False
                 logger.info(f"Found {db.archives.count_documents({})} new archives")
                 for archive in db_archives:
