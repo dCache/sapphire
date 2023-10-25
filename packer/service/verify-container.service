@@ -4,6 +4,7 @@ After=multi-user.target
 
 [Service]
 Type=simple
+KillSignal=SIGINT
 ExecStart=/usr/bin/python3 /usr/local/bin/verify-container.py
 
 [Install]
