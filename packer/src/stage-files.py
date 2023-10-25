@@ -267,7 +267,8 @@ def main(config="/etc/dcache/container.conf"):
             client = MongoClient(mongo_uri)
             mongo_db = client[mongo_db_name]
 
-            results = mongo_db.stage.find({"status": "new"})
+            results = mongo_db.stage.find({"status": "new"}, no_cursor_timeout=True,
+                                          allow_disk_use=True, batch_size=1024)
             length_results = mongo_db.stage.count_documents({"status": "new"})
         except (pymongo.errors.ConnectionFailure, pymongo.errors.InvalidURI, pymongo.errors.InvalidName,
                 pymongo.errors.ServerSelectionTimeoutError) as e:
@@ -330,6 +331,7 @@ def main(config="/etc/dcache/container.conf"):
                 break
 
         logger.debug("finished, tidy up")
+        results.close()
         cleanup_archives(keep_archive_time)
         logger.info("Finished run, sleeping now for 30 s")
         time.sleep(30)
